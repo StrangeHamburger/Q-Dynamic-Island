@@ -2,7 +2,7 @@
 // 主进程运行（Node 环境），无 CORS 限制，多个音乐源依次兜底。
 const { fetch } = globalThis
 
-跟我的一样的给我们搞const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 
 // query -> dataUrl（null 表示搜过但没结果，短期缓存避免反复请求）
 const cache = new Map()
