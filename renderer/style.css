@@ -17,7 +17,8 @@ html, body {
 
 /* 胶囊主体：左右两端半圆、上下两边平（stadium 形状） */
 .island {
-  --accent: 99, 102, 241; /* 封面主色（r,g,b），由 JS 覆盖 */
+  --accent: 80, 84, 90;      /* 封面主色（r,g,b），由 JS 覆盖 */
+  --accent-deep: 40, 42, 46; /* 主键渐变深色端，由 JS 覆盖 */
 
   position: absolute;
   left: 50%;
@@ -59,7 +60,7 @@ html, body {
   border-radius: 46px;
 }
 
-/* 封面：直接铺满圆圈（无封面时才显示兜底渐变） */
+/* 封面：直接铺满圆圈（无封面时才显示兜底渐变）；点击 = 播放/暂停 */
 .cover {
   flex: 0 0 auto;
   width: 40px;
@@ -67,6 +68,7 @@ html, body {
   border-radius: 50%;
   background: transparent;
   overflow: hidden;
+  cursor: pointer;
   transition: width 0.32s ease, height 0.32s ease;
 }
 .cover-img {
@@ -119,44 +121,48 @@ html, body {
   pointer-events: auto;
 }
 
-/* 控制按钮：毛玻璃圆钮，左右对称 */
+/* 控制按钮：上一首/下一首为细线圆环，悬停亮起 */
 .btn {
   position: relative;
-  width: 38px;
-  height: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid rgba(255, 255, 255, 0.26);
   border-radius: 50%;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 8px rgba(0, 0, 0, 0.28);
+  background: transparent;
   color: #fff;
+  opacity: 0.9;
   padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: background 0.18s ease, transform 0.14s ease, box-shadow 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.14s ease, box-shadow 0.18s ease;
 }
 .btn svg {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
 }
 .btn:hover {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1));
-  transform: translateY(-1px) scale(1.06);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px) scale(1.08);
 }
 .btn:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
 }
 
-/* 播放/暂停主键：中性灰（不再随封面变色） */
+/* 播放/暂停主键：吸取封面主色的光球（无封面时呈中性灰，不做任何过渡颜色） */
 .btn-main {
-  width: 44px;
-  height: 44px;
-  border-color: rgba(255, 255, 255, 0.08);
-  background: linear-gradient(145deg, #8a8f97, #585c63);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 3px 12px rgba(0, 0, 0, 0.35);
+  width: 46px;
+  height: 46px;
+  border: none;
+  opacity: 1;
+  background: linear-gradient(145deg, rgb(var(--accent)), rgb(var(--accent-deep)));
+  box-shadow:
+    0 0 16px rgba(var(--accent), 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 4px 14px rgba(0, 0, 0, 0.3);
 }
 .btn-main svg {
   position: absolute;
@@ -167,7 +173,12 @@ html, body {
   transition: opacity 0.18s ease, transform 0.18s ease;
 }
 .btn-main:hover {
-  background: linear-gradient(145deg, #9aa0a8, #666b72);
+  background: linear-gradient(145deg, rgb(var(--accent)), rgb(var(--accent-deep)));
+  box-shadow:
+    0 0 26px rgba(var(--accent), 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+  transform: translateY(-1px) scale(1.05);
 }
 /* 播放 ↔ 暂停：交叉淡入淡出 */
 .btn-main .icon-pause {
@@ -184,8 +195,7 @@ html, body {
 }
 
 /* 拖动时：保持收起态、不放大、隐藏控制按钮、禁止过渡。
-   之前直接强制 280×56 会在悬停放大态被抓取时产生动画变形，
-   且按钮残留显示、排版拥挤，拖起来很难看 */
+   外观与「无鼠标悬停」时完全一致 */
 .island.dragging,
 .island.dragging:hover {
   width: 280px;
@@ -193,10 +203,6 @@ html, body {
   border-radius: 28px;
   cursor: grabbing;
   transition: none;
-  /* 拖拽时略微"抬起来"的观感 */
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px rgba(var(--accent), 0.22);
 }
 .island.dragging .controls,
 .island.dragging:hover .controls {
@@ -217,15 +223,31 @@ html, body {
 }
 
 /* --- 自定义右键菜单（黑色） --- */
+/* 菜单打开时：岛屿不消失，以收起态留在顶部，菜单显示在下方 */
 body.menu-open .island {
-  display: none;
+  top: 8px;
+  transform: translateX(-50%);
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+  transition: none;
+  pointer-events: none;
+}
+body.menu-open .island:hover {
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+}
+body.menu-open .controls {
+  opacity: 0;
+  pointer-events: none;
 }
 .menu {
   position: absolute;
   left: 0;
   top: 0;
   z-index: 10;
-  width: 216px; /* 固定宽：range 滑块行的固有宽度会撑破 232px 的菜单窗口，导致菜单被裁成一半 */
+  width: 216px; /* 固定宽：range 滑块行的固有宽度会撑破菜单窗口，导致菜单被裁成一半 */
   padding: 6px;
   background: rgba(16, 16, 20, 0.97);
   backdrop-filter: blur(18px);
@@ -236,6 +258,36 @@ body.menu-open .island {
   color: #e8e8ea;
   font-size: 13px;
   user-select: none;
+}
+.menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 6px 10px;
+}
+.menu-title {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 1px;
+}
+.menu-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.menu-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 .menu-item {
   display: flex;

@@ -15,6 +15,7 @@
   const scaleSlider = document.getElementById('scaleSlider')
   const scaleValue = document.getElementById('scaleValue')
   const pinCheck = document.getElementById('pinCheck')
+  const menuClose = document.getElementById('menuClose')
   const menuQuit = document.getElementById('menuQuit')
 
   // 播放/暂停状态用 class 切换（两个 SVG 图标在按钮里交叉淡入淡出）
@@ -112,15 +113,26 @@
     }
   }
 
-  // 把主色写进 CSS 变量，供播放键等复用（"r,g,b" 字符串）
+  // 把主色写进 CSS 变量，供主键渐变/光晕复用。
+  // 无封面（切歌中/失败）时用中性灰，不显示任何残留/过渡颜色
   function setAccent(rgb) {
-    islandEl.style.setProperty('--accent', rgb ? rgb.join(',') : '99,102,241')
+    let c = rgb ? rgb.slice() : [76, 80, 86]
+    // 封面色太暗会让主键看不清：向浅灰提亮到可辨识亮度
+    const lum = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255
+    if (lum < 0.3) {
+      const t = Math.min(1, (0.3 - lum) / 0.3)
+      for (let i = 0; i < 3; i++) c[i] = Math.round(c[i] + (176 - c[i]) * t)
+    }
+    islandEl.style.setProperty('--accent', c.join(','))
+    islandEl.style.setProperty('--accent-deep', c.map((v) => Math.round(v * 0.5)).join(','))
   }
 
   // 按钮 -> 主进程
   btnPrev.addEventListener('click', () => window.island.musicCommand('prev'))
   toggleEl.addEventListener('click', () => window.island.musicCommand('toggle'))
   btnNext.addEventListener('click', () => window.island.musicCommand('next'))
+  // 点击封面 = 播放/暂停
+  coverEl.addEventListener('click', () => window.island.musicCommand('toggle'))
 
   // 订阅状态更新
   window.island.onMusicUpdate(render)
@@ -144,7 +156,7 @@
 
   islandEl.addEventListener('pointerdown', (e) => {
     if (isPinned) return
-    if (e.target.closest('.btn')) return // 按钮不参与拖动
+    if (e.target.closest('.btn') || e.target.closest('.cover')) return // 按钮/封面不参与拖动
     dragging = true
     islandEl.classList.add('dragging') // 拖动时不悬停放大
     // 无边框窗口：client(0,0) 就是窗口左上角，据此反推窗口当前屏幕坐标
@@ -191,8 +203,8 @@
 
   // --- 自定义右键菜单（黑色，替代原生菜单） ---
   // 菜单窗口尺寸（与 main.js 的 MENU_SIZE 一致）
-  const MENU_W = 232
-  const MENU_H = 224
+  const MENU_W = 300
+  const MENU_H = 240
 
   let lastMenuX = 0
   let lastMenuY = 0
@@ -201,8 +213,9 @@
   function showMenu() {
     pendingMenuShow = false
     menuEl.hidden = false
+    // 菜单在岛屿下方（y≥72）展开，并钳制在窗口内
     menuEl.style.left = Math.min(Math.max(8, lastMenuX), MENU_W - menuEl.offsetWidth - 8) + 'px'
-    menuEl.style.top = Math.min(Math.max(8, lastMenuY), MENU_H - menuEl.offsetHeight - 8) + 'px'
+    menuEl.style.top = Math.min(Math.max(72, lastMenuY), MENU_H - menuEl.offsetHeight - 8) + 'px'
   }
 
   // 窗口切到菜单尺寸后再摆放/显示菜单：否则窗口还是岛屿尺寸时，
@@ -256,5 +269,6 @@
 
   pinCheck.addEventListener('change', () => window.island.setPinned(pinCheck.checked))
 
+  menuClose.addEventListener('click', () => closeMenu())
   menuQuit.addEventListener('click', () => window.island.quit())
 })()

@@ -29,7 +29,7 @@ function setPinned(v) {
 // 按当前状态调整窗口尺寸：菜单展开用菜单尺寸，否则按岛屿缩放比例。
 // 用 setBounds 同时设置尺寸和位置，并钳制在工作区内——避免菜单窗口
 // 从屏幕边缘展开时被截断（右键菜单显示一半）
-const MENU_SIZE = { width: 232, height: 224 }
+const MENU_SIZE = { width: 300, height: 240 } // 菜单展开：岛屿留在顶部收起态，菜单显示在下
 function resizeWindow() {
   if (!mainWindow) return
   const w = menuOpen ? MENU_SIZE.width : Math.round(420 * islandScale)
