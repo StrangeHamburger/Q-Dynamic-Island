@@ -1,5 +1,5 @@
 // cover.js - 按 歌名 + 歌手 搜索音乐封面，返回 data URI（失败返回 null）
-// 主进程运行（Node 环境），无 CORS 限制，多个音乐源依次兜底。
+// 主进程运行（Node 环境），无 CORS 限制，多个音乐源并行兜底，谁先拿到用谁。
 const { fetch } = globalThis
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
@@ -15,7 +15,7 @@ function withTimeout(ms) {
   return { signal: ctl.signal, done: () => clearTimeout(t) }
 }
 
-async function fetchJson(url, timeout = 7000) {
+async function fetchJson(url, timeout = 4000) {
   const { signal, done } = withTimeout(timeout)
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA, Referer: 'https://y.qq.com/' }, signal })
@@ -24,7 +24,7 @@ async function fetchJson(url, timeout = 7000) {
   } catch { return null } finally { done() }
 }
 
-async function fetchImageDataUrl(url, timeout = 8000) {
+async function fetchImageDataUrl(url, timeout = 5000) {
   const { signal, done } = withTimeout(timeout)
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal })
@@ -36,7 +36,7 @@ async function fetchImageDataUrl(url, timeout = 8000) {
   } catch { return null } finally { done() }
 }
 
-// --- 各音乐源（依次尝试）---
+// --- 各音乐源 ---
 
 // QQ 音乐搜索
 async function providerQQ(query) {
@@ -58,7 +58,8 @@ async function providerNetease(query) {
   const album = songs[0].album || {}
   const pic = album.picUrl || album.blurPicUrl
   if (!pic) return null
-  return fetchImageDataUrl(String(pic).replace(/^http:/, 'https:'))
+  const url = String(pic).replace(/^http:/, 'https:')
+  return fetchImageDataUrl(url.includes('?') ? url : url + '?param=300y300')
 }
 
 // iTunes 搜索（国外源，兜底主流歌曲）
@@ -67,18 +68,24 @@ async function providerITunes(query) {
   const j = await fetchJson(u)
   const r = j && j.results && j.results[0]
   if (!r || !r.artworkUrl100) return null
-  const big = String(r.artworkUrl100).replace('100x100bb', '600x600bb')
+  const big = String(r.artworkUrl100).replace('100x100bb', '300x300bb')
   return fetchImageDataUrl(big)
 }
 
 const PROVIDERS = [providerQQ, providerNetease, providerITunes]
 
+// 并行尝试所有源，谁先拿到封面用谁；全部失败才返回 null
 async function searchCover(query) {
-  for (const p of PROVIDERS) {
+  const attempts = PROVIDERS.map(async (p) => {
     const dataUrl = await p(query)
-    if (dataUrl) return dataUrl
+    if (!dataUrl) throw new Error('miss') // 让 Promise.any 跳过这个源继续等
+    return dataUrl
+  })
+  try {
+    return await Promise.any(attempts)
+  } catch {
+    return null
   }
-  return null
 }
 
 // 对外：根据标题+歌手拿封面（带缓存）

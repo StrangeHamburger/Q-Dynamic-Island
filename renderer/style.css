@@ -65,7 +65,7 @@ html, body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
+  background: transparent;
   overflow: hidden;
   transition: width 0.32s ease, height 0.32s ease;
 }

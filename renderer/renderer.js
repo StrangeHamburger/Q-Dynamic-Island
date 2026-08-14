@@ -38,7 +38,7 @@
       lastCoverSrc = ''
       coverImg.style.display = 'none'
       coverImg.removeAttribute('src')
-      coverEl.style.background = coverColor(title)
+      coverEl.style.background = '' // 切换过程中不要兜底底色
       setAccent(null)
       return
     }
@@ -53,7 +53,7 @@
       coverImg.style.display = 'block'
     }
     img.onerror = () => {
-      coverEl.style.background = coverColor(title)
+      coverEl.style.background = ''
       coverImg.style.display = 'none'
       setAccent(null)
     }
@@ -111,15 +111,6 @@
   // 把主色写进 CSS 变量，供播放键等复用（"r,g,b" 字符串）
   function setAccent(rgb) {
     islandEl.style.setProperty('--accent', rgb ? rgb.join(',') : '99,102,241')
-  }
-
-  // 简单封面占位配色：同一首歌颜色稳定（无封面时的兜底）
-  function coverColor(title) {
-    const s = title || 'x'
-    let h = 0
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
-    const hue = h % 360
-    return `linear-gradient(135deg, hsl(${hue},70%,55%), hsl(${(hue + 60) % 360},70%,45%))`
   }
 
   // 按钮 -> 主进程
