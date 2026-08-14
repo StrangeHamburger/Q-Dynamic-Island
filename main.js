@@ -26,15 +26,19 @@ function setPinned(v) {
   }
 }
 
-// 按当前状态调整窗口尺寸：菜单展开用菜单尺寸，否则按岛屿缩放比例
+// 按当前状态调整窗口尺寸：菜单展开用菜单尺寸，否则按岛屿缩放比例。
+// 用 setBounds 同时设置尺寸和位置，并钳制在工作区内——避免菜单窗口
+// 从屏幕边缘展开时被截断（右键菜单显示一半）
 const MENU_SIZE = { width: 232, height: 224 }
 function resizeWindow() {
   if (!mainWindow) return
-  if (menuOpen) {
-    mainWindow.setSize(MENU_SIZE.width, MENU_SIZE.height)
-  } else {
-    mainWindow.setSize(Math.round(420 * islandScale), Math.round(92 * islandScale))
-  }
+  const w = menuOpen ? MENU_SIZE.width : Math.round(420 * islandScale)
+  const h = menuOpen ? MENU_SIZE.height : Math.round(92 * islandScale)
+  const b = mainWindow.getBounds()
+  const wa = screen.getDisplayMatching(b).workArea
+  const x = Math.min(Math.max(b.x, wa.x), wa.x + wa.width - w)
+  const y = Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
+  mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h })
 }
 
 // 系统托盘：最小化后从托盘点回来；右键退出

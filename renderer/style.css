@@ -183,13 +183,29 @@ html, body {
   transform: scale(1);
 }
 
-/* 拖动时保持收起态（只有非拖动悬停才放大） */
+/* 拖动时：保持收起态、不放大、隐藏控制按钮、禁止过渡。
+   之前直接强制 280×56 会在悬停放大态被抓取时产生动画变形，
+   且按钮残留显示、排版拥挤，拖起来很难看 */
 .island.dragging,
 .island.dragging:hover {
   width: 280px;
   height: 56px;
   border-radius: 28px;
   cursor: grabbing;
+  transition: none;
+  /* 拖拽时略微"抬起来"的观感 */
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(var(--accent), 0.22);
+}
+.island.dragging .controls,
+.island.dragging:hover .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+.island.dragging .cover,
+.island.dragging:hover .cover {
+  transition: none;
 }
 
 /* 小尺寸（紧凑模式）：隐藏歌名/歌手，内容居中 */
@@ -209,7 +225,7 @@ body.menu-open .island {
   left: 0;
   top: 0;
   z-index: 10;
-  min-width: 176px;
+  width: 216px; /* 固定宽：range 滑块行的固有宽度会撑破 232px 的菜单窗口，导致菜单被裁成一半 */
   padding: 6px;
   background: rgba(16, 16, 20, 0.97);
   backdrop-filter: blur(18px);

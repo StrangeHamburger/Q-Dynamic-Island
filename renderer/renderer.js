@@ -190,19 +190,44 @@
   applyScale(scale)
 
   // --- 自定义右键菜单（黑色，替代原生菜单） ---
-  function openMenu(x, y) {
+  // 菜单窗口尺寸（与 main.js 的 MENU_SIZE 一致）
+  const MENU_W = 232
+  const MENU_H = 224
+
+  let lastMenuX = 0
+  let lastMenuY = 0
+  let pendingMenuShow = false
+
+  function showMenu() {
+    pendingMenuShow = false
+    menuEl.hidden = false
+    menuEl.style.left = Math.min(Math.max(8, lastMenuX), MENU_W - menuEl.offsetWidth - 8) + 'px'
+    menuEl.style.top = Math.min(Math.max(8, lastMenuY), MENU_H - menuEl.offsetHeight - 8) + 'px'
+  }
+
+  // 窗口切到菜单尺寸后再摆放/显示菜单：否则窗口还是岛屿尺寸时，
+  // 菜单会先被旧窗口裁掉（只露出一半），等 resize 完成才补全
+  function maybeShowMenu() {
+    if (!pendingMenuShow) return
+    if (window.innerWidth !== MENU_W || window.innerHeight !== MENU_H) return
+    showMenu()
+  }
+  window.addEventListener('resize', maybeShowMenu)
+
+  function openMenu() {
     pinCheck.checked = isPinned
     document.body.classList.add('menu-open')
-    menuEl.hidden = false
+    pendingMenuShow = true
     window.island.setMenuOpen(true)
-    // 窗口切到菜单尺寸（232×224），把菜单钳制在窗口内
-    const MW = 232
-    const MH = 224
-    menuEl.style.left = Math.min(Math.max(8, x), MW - menuEl.offsetWidth - 8) + 'px'
-    menuEl.style.top = Math.min(Math.max(8, y), MH - menuEl.offsetHeight - 8) + 'px'
+    maybeShowMenu()
+    // 兜底：万一 resize 事件没触发，也强制显示
+    setTimeout(() => {
+      if (pendingMenuShow) showMenu()
+    }, 500)
   }
 
   function closeMenu() {
+    pendingMenuShow = false
     menuEl.hidden = true
     document.body.classList.remove('menu-open')
     window.island.setMenuOpen(false)
@@ -211,7 +236,11 @@
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault()
     if (!menuEl.hidden) closeMenu()
-    else openMenu(e.clientX, e.clientY)
+    else {
+      lastMenuX = e.clientX
+      lastMenuY = e.clientY
+      openMenu()
+    }
   })
 
   // 点击菜单外部关闭（滑杆/勾选都在菜单内，不受影响）
