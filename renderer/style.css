@@ -119,12 +119,15 @@ html, body {
   pointer-events: auto;
 }
 
+/* 控制按钮：毛玻璃圆钮，左右对称 */
 .btn {
+  position: relative;
   width: 38px;
   height: 38px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 8px rgba(0, 0, 0, 0.28);
   color: #fff;
   padding: 0;
   cursor: pointer;
@@ -133,31 +136,133 @@ html, body {
   justify-content: center;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  transition: background 0.18s ease, transform 0.12s ease;
+  transition: background 0.18s ease, transform 0.14s ease, box-shadow 0.18s ease;
 }
 .btn svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 .btn:hover {
-  background: rgba(255, 255, 255, 0.24);
-  transform: scale(1.08);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1));
+  transform: translateY(-1px) scale(1.06);
 }
 .btn:active {
-  transform: scale(0.9);
+  transform: scale(0.92);
 }
 
-/* 播放/暂停主键：用封面主色做渐变，更精致 */
+/* 播放/暂停主键：中性灰（不再随封面变色） */
 .btn-main {
   width: 44px;
   height: 44px;
-  background: linear-gradient(135deg, rgba(var(--accent), 0.85), rgba(var(--accent), 0.45));
-  box-shadow: 0 2px 10px rgba(var(--accent), 0.4);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(145deg, #8a8f97, #585c63);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 3px 12px rgba(0, 0, 0, 0.35);
 }
 .btn-main svg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
   width: 22px;
   height: 22px;
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 .btn-main:hover {
-  background: linear-gradient(135deg, rgba(var(--accent), 1), rgba(var(--accent), 0.6));
+  background: linear-gradient(145deg, #9aa0a8, #666b72);
+}
+/* 播放 ↔ 暂停：交叉淡入淡出 */
+.btn-main .icon-pause {
+  opacity: 0;
+  transform: scale(0.5);
+}
+.btn-main.playing .icon-play {
+  opacity: 0;
+  transform: scale(0.5);
+}
+.btn-main.playing .icon-pause {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 拖动时保持收起态（只有非拖动悬停才放大） */
+.island.dragging,
+.island.dragging:hover {
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+  cursor: grabbing;
+}
+
+/* 小尺寸（紧凑模式）：隐藏歌名/歌手，内容居中 */
+.island.compact {
+  justify-content: center;
+}
+.island.compact .info {
+  display: none;
+}
+
+/* --- 自定义右键菜单（黑色） --- */
+body.menu-open .island {
+  display: none;
+}
+.menu {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  min-width: 176px;
+  padding: 6px;
+  background: rgba(16, 16, 20, 0.97);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  color: #e8e8ea;
+  font-size: 13px;
+  user-select: none;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.menu-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #9aa0a8;
+  cursor: pointer;
+}
+.menu-row:hover {
+  background: transparent;
+}
+.menu-label {
+  flex: 0 0 auto;
+}
+.menu-row input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: #9aa0a8;
+  cursor: pointer;
+}
+.menu-value {
+  flex: 0 0 auto;
+  width: 42px;
+  text-align: right;
+  color: #9aa0a8;
+  font-variant-numeric: tabular-nums;
+}
+.menu-sep {
+  height: 1px;
+  margin: 6px 8px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.menu-danger {
+  color: #ff6b6b;
 }

@@ -23,4 +23,24 @@ contextBridge.exposeInMainWorld('island', {
   moveWindow(x, y) {
     ipcRenderer.send('window:move', { x, y })
   },
+
+  // 自定义右键菜单开关（主进程据此切窗口尺寸）
+  setMenuOpen(open) {
+    ipcRenderer.send('window:menu', !!open)
+  },
+
+  // 岛屿缩放比例（主进程据此调整窗口大小）
+  setScale(s) {
+    ipcRenderer.send('window:scale', s)
+  },
+
+  // 固定 / 取消固定
+  setPinned(v) {
+    ipcRenderer.send('island:setPinned', !!v)
+  },
+
+  // 退出应用
+  quit() {
+    ipcRenderer.send('app:quit')
+  },
 })

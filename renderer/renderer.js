@@ -10,23 +10,27 @@
   const btnPrev = document.getElementById('prev')
   const btnNext = document.getElementById('next')
 
-  // SVG 图标（比 emoji 干净、不依赖系统字体）
-  const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
-  const PAUSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>'
+  // 右键菜单元素
+  const menuEl = document.getElementById('menu')
+  const scaleSlider = document.getElementById('scaleSlider')
+  const scaleValue = document.getElementById('scaleValue')
+  const pinCheck = document.getElementById('pinCheck')
+  const menuQuit = document.getElementById('menuQuit')
 
+  // 播放/暂停状态用 class 切换（两个 SVG 图标在按钮里交叉淡入淡出）
   function render(state) {
+    const playing = state && state.hasSession && state.status === 'Playing'
+    toggleEl.classList.toggle('playing', playing)
+
     if (!state || !state.hasSession) {
       titleEl.textContent = '未播放'
       artistEl.textContent = '等待音乐…'
-      toggleEl.innerHTML = PLAY_ICON
       setCover(null, null)
       return
     }
 
     titleEl.textContent = state.title || '未知曲目'
     artistEl.textContent = state.artist || '未知歌手'
-    toggleEl.innerHTML = state.status === 'Playing' ? PAUSE_ICON : PLAY_ICON
-
     setCover(state.cover, state.title)
   }
 
@@ -128,6 +132,7 @@
   window.island.onPinned((pinned) => {
     isPinned = pinned
     islandEl.classList.toggle('pinned', pinned)
+    if (pinCheck) pinCheck.checked = pinned
   })
 
   // 手动拖动：pointer capture 保证快速拖动时鼠标移出窗口也不丢
@@ -141,6 +146,7 @@
     if (isPinned) return
     if (e.target.closest('.btn')) return // 按钮不参与拖动
     dragging = true
+    islandEl.classList.add('dragging') // 拖动时不悬停放大
     // 无边框窗口：client(0,0) 就是窗口左上角，据此反推窗口当前屏幕坐标
     dragWinX = e.screenX - e.clientX
     dragWinY = e.screenY - e.clientY
@@ -160,8 +166,66 @@
   const endDrag = (e) => {
     if (!dragging) return
     dragging = false
+    islandEl.classList.remove('dragging')
     try { islandEl.releasePointerCapture(e.pointerId) } catch (err) {}
   }
   islandEl.addEventListener('pointerup', endDrag)
   islandEl.addEventListener('pointercancel', endDrag)
+
+  // --- 大小缩放（CSS zoom + 窗口同步 + localStorage 持久化） ---
+  const MIN_SCALE = 0.67
+  let scale = parseFloat(localStorage.getItem('islandScale'))
+  if (!(scale >= MIN_SCALE && scale <= 1)) scale = 1
+
+  function applyScale(s) {
+    scale = Math.min(1, Math.max(MIN_SCALE, s))
+    islandEl.style.zoom = String(scale)
+    // 缩得比较小时进入紧凑模式：隐藏歌名/歌手
+    islandEl.classList.toggle('compact', scale <= 0.74)
+    scaleSlider.value = scale
+    scaleValue.textContent = Math.round(scale * 100) + '%'
+    localStorage.setItem('islandScale', String(scale))
+    window.island.setScale(scale)
+  }
+  applyScale(scale)
+
+  // --- 自定义右键菜单（黑色，替代原生菜单） ---
+  function openMenu(x, y) {
+    pinCheck.checked = isPinned
+    document.body.classList.add('menu-open')
+    menuEl.hidden = false
+    window.island.setMenuOpen(true)
+    // 窗口切到菜单尺寸（232×224），把菜单钳制在窗口内
+    const MW = 232
+    const MH = 224
+    menuEl.style.left = Math.min(Math.max(8, x), MW - menuEl.offsetWidth - 8) + 'px'
+    menuEl.style.top = Math.min(Math.max(8, y), MH - menuEl.offsetHeight - 8) + 'px'
+  }
+
+  function closeMenu() {
+    menuEl.hidden = true
+    document.body.classList.remove('menu-open')
+    window.island.setMenuOpen(false)
+  }
+
+  window.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    if (!menuEl.hidden) closeMenu()
+    else openMenu(e.clientX, e.clientY)
+  })
+
+  // 点击菜单外部关闭（滑杆/勾选都在菜单内，不受影响）
+  document.addEventListener('click', (e) => {
+    if (!menuEl.hidden && !e.target.closest('.menu')) closeMenu()
+  })
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menuEl.hidden) closeMenu()
+  })
+
+  scaleSlider.addEventListener('input', () => applyScale(parseFloat(scaleSlider.value)))
+
+  pinCheck.addEventListener('change', () => window.island.setPinned(pinCheck.checked))
+
+  menuQuit.addEventListener('click', () => window.island.quit())
 })()
