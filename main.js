@@ -155,12 +155,14 @@ ipcMain.on('music:command', (event, cmd) => {
   }
 })
 
-// 手动拖动窗口（渲染进程算好目标坐标后发来；钳制在屏幕内，避免拖到边缘出屏）
+// 手动拖动窗口（渲染进程算好目标坐标后发来；按岛屿实际尺寸钳制在屏幕内）
 ipcMain.on('window:move', (event, pos) => {
   if (!mainWindow || pinned || !pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return
   const display = screen.getDisplayNearestPoint({ x: pos.x, y: pos.y })
   const wa = display.workArea
-  const [w, h] = mainWindow.getSize()
+  const [winW, winH] = mainWindow.getSize()
+  const w = Number.isFinite(pos.w) && pos.w > 0 ? pos.w : winW
+  const h = Number.isFinite(pos.h) && pos.h > 0 ? pos.h : winH
   const x = Math.min(Math.max(pos.x, wa.x), wa.x + wa.width - w)
   const y = Math.min(Math.max(pos.y, wa.y), wa.y + wa.height - h)
   mainWindow.setPosition(Math.round(x), Math.round(y))

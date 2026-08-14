@@ -21,9 +21,9 @@ html, body {
   --accent-deep: 40, 42, 46; /* 主键渐变深色端，由 JS 覆盖 */
 
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  left: 0;   /* 锚定窗口左缘：收起/展开/菜单切换时封面与胶囊左缘都不漂移 */
+  top: 0;
+  transform: none;
 
   width: 280px;   /* 收起态尺寸 */
   height: 56px;
@@ -214,29 +214,26 @@ html, body {
   transition: none;
 }
 
-/* 小尺寸（紧凑模式）：隐藏歌名/歌手，内容居中 */
+/* 小尺寸（紧凑模式）：隐藏歌名/歌手；封面仍贴最左，控制钮靠右 */
 .island.compact {
-  justify-content: center;
+  justify-content: flex-start;
 }
 .island.compact .info {
   display: none;
 }
+.island.compact .controls {
+  margin-left: auto;
+}
 
 /* --- 自定义右键菜单（黑色） --- */
-/* 菜单打开时：岛屿不消失，以收起态留在顶部，菜单显示在下方 */
-body.menu-open .island {
-  top: 8px;
-  transform: translateX(-50%);
+/* 菜单打开时：岛屿不消失、保持原位（左缘锚定）与收起态，菜单显示在下方 */
+body.menu-open .island,
+body.menu-open .island:hover {
   width: 280px;
   height: 56px;
   border-radius: 28px;
   transition: none;
   pointer-events: none;
-}
-body.menu-open .island:hover {
-  width: 280px;
-  height: 56px;
-  border-radius: 28px;
 }
 body.menu-open .controls {
   opacity: 0;

@@ -153,6 +153,8 @@
   let dragWinY = 0
   let dragStartX = 0
   let dragStartY = 0
+  let dragW = 0
+  let dragH = 0
 
   islandEl.addEventListener('pointerdown', (e) => {
     if (isPinned) return
@@ -164,6 +166,10 @@
     dragWinY = e.screenY - e.clientY
     dragStartX = e.screenX
     dragStartY = e.screenY
+    // 记录岛屿实际渲染尺寸（含 zoom），拖到屏幕边缘时按它钳制而不是按更大的窗口
+    const r = islandEl.getBoundingClientRect()
+    dragW = r.width
+    dragH = r.height
     islandEl.setPointerCapture(e.pointerId)
   })
 
@@ -171,7 +177,9 @@
     if (!dragging) return
     window.island.moveWindow(
       dragWinX + (e.screenX - dragStartX),
-      dragWinY + (e.screenY - dragStartY)
+      dragWinY + (e.screenY - dragStartY),
+      dragW,
+      dragH
     )
   })
 

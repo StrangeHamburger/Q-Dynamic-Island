@@ -19,9 +19,9 @@ contextBridge.exposeInMainWorld('island', {
     ipcRenderer.send('music:command', cmd)
   },
 
-  // 请求移动窗口到屏幕坐标 (x, y)
-  moveWindow(x, y) {
-    ipcRenderer.send('window:move', { x, y })
+  // 请求移动窗口到屏幕坐标 (x, y)；w/h 为岛屿实际渲染尺寸，主进程按它钳制
+  moveWindow(x, y, w, h) {
+    ipcRenderer.send('window:move', { x, y, w, h })
   },
 
   // 自定义右键菜单开关（主进程据此切窗口尺寸）
