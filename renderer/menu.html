@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>灵动岛设置</title>
+  <link rel="stylesheet" href="menu.css" />
+</head>
+<body>
+  <div class="menu">
+    <div class="menu-head">
+      <span class="menu-title">灵动岛</span>
+      <button class="menu-close" id="menuClose" aria-label="关闭菜单" title="关闭">×</button>
+    </div>
+    <label class="menu-item">
+      <input type="checkbox" id="pinCheck" />
+      <span>固定位置</span>
+    </label>
+    <label class="menu-item">
+      <input type="checkbox" id="waveCheck" />
+      <span>波浪</span>
+    </label>
+    <div class="menu-item menu-row">
+      <span class="menu-label">大小</span>
+      <input type="range" id="scaleSlider" min="0.67" max="1" step="0.01" />
+      <span class="menu-value" id="scaleValue">100%</span>
+    </div>
+    <div class="menu-item menu-row">
+      <span class="menu-label">背景不透明</span>
+      <input type="range" id="bgOpacitySlider" min="0.2" max="1" step="0.01" />
+      <span class="menu-value" id="bgOpacityValue">92%</span>
+    </div>
+    <div class="menu-sep"></div>
+    <div class="menu-item menu-danger" id="menuQuit">退出</div>
+  </div>
+  <script src="menu.js"></script>
+</body>
+</html>

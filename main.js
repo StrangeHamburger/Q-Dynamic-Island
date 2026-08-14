@@ -45,23 +45,93 @@ function setPinned(v) {
   }
 }
 
-// 窗口尺寸：菜单展开用菜单尺寸，否则始终 expanded（岛在窗口内做形态切换，窗口不参与动画）。
-// 用 setBounds 同时设置尺寸和位置，并钳制在工作区内——避免菜单窗口从屏幕边缘展开时被截断
-const MENU_SIZE = { width: 300, height: 250 } // 菜单区高度预算：菜单打开时窗口在放大态基础上向下扩展出这块区域（含大小/背景两个滑块行）
+// 窗口尺寸：始终 expanded（岛在窗口内做形态切换，窗口不参与动画）。
+// 用 setBounds 同时设置尺寸和位置，并钳制在工作区内。
+// 右键菜单是独立的透明置顶小窗口（见 createMenuWindow）——岛窗口尺寸全程不变，
+// 开/关菜单不再有任何窗口 resize → 消除菜单关闭时的 OS 合成层闪烁
 function resizeWindow() {
   if (!mainWindow) return
-  // 菜单打开时宽度保持放大态不变（岛在窗口内锚定，宽度不变 → 岛不水平移动/跳位），
-  // 只向下扩展高度容纳菜单面板；关闭恢复原高
   const w = Math.round(SIZE.expanded.width * islandScale)
-  const h = menuOpen ? Math.round(SIZE.expanded.height * islandScale) + MENU_SIZE.height
-    : Math.round(SIZE.expanded.height * islandScale)
+  const h = Math.round(SIZE.expanded.height * islandScale)
   const b = mainWindow.getBounds()
   const wa = screen.getDisplayMatching(b).workArea
-  const x = Math.min(Math.max(b.x, wa.x), wa.x + wa.width - w)
-  const y = menuOpen ? Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
-    : dockedTop ? wa.y
-    : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
+  // 缩放按锚点保持岛的位置：左锚保左缘、中锚保窗口中心（岛居中不动）、右锚保右缘。
+  // 之前直接 clamp(b.x) 保留的是左缘——中锚时窗口宽度一变，岛就带着跳
+  let x
+  if (anchorMode === 'right') x = b.x + b.width - w
+  else if (anchorMode === 'center') x = b.x + (b.width - w) / 2
+  else x = b.x
+  x = Math.min(Math.max(x, wa.x), wa.x + wa.width - w)
+  const y = dockedTop ? wa.y : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
   mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h })
+}
+
+// --- 独立菜单窗口（透明、无边框、置顶、不进任务栏） ---
+// 菜单常驻一个小 BrowserWindow，随右键在光标处弹出、失焦即收起。
+// 控制项（大小/背景不透明/固定/波浪/退出）经 IPC 与岛窗口共享状态，
+// 与主岛窗口同 file:// origin → localStorage 互通，菜单窗口直接读写持久化值。
+// 菜单窗口尺寸不参与岛窗口动画，是独立的合成层，开合对岛窗口零影响
+const MENU_WINDOW_SIZE = { width: 218, height: 240 } // 初始高度，加载后按内容自适应
+let menuWindow = null
+let pendingMenuPos = null // 首次加载未完成时暂存弹出位置，menu:ready 后弹出
+
+function createMenuWindow() {
+  if (menuWindow && !menuWindow.isDestroyed()) return menuWindow
+  menuWindow = new BrowserWindow({
+    width: MENU_WINDOW_SIZE.width,
+    height: MENU_WINDOW_SIZE.height,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    fullscreenable: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  menuWindow.setAlwaysOnTop(true, 'screen-saver')
+  menuWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  menuWindow.loadFile(path.join(__dirname, 'renderer', 'menu.html'))
+  menuWindow.on('blur', () => hideMenuWindow()) // 点岛/点桌面/切应用 → 收起菜单
+  menuWindow.on('closed', () => { menuWindow = null })
+  return menuWindow
+}
+
+function positionAndShowMenu(w, x, y) {
+  pendingMenuPos = null
+  const wa = screen.getDisplayNearestPoint({ x, y }).workArea
+  // 菜单右上角对齐光标，钳制在工作区内（含菜单自身尺寸）
+  const mx = Math.min(Math.max(x + 4, wa.x + 4), wa.x + wa.width - MENU_WINDOW_SIZE.width - 4)
+  const my = Math.min(Math.max(y + 4, wa.y + 4), wa.y + wa.height - MENU_WINDOW_SIZE.height - 4)
+  w.setPosition(Math.round(mx), Math.round(my))
+  w.show()
+  w.focus()
+  menuOpen = true
+  if (mainWindow) mainWindow.webContents.send('island:menuOpen', true)
+  w.webContents.send('island:pinned', pinned) // 菜单窗口初始化固定勾选
+}
+
+function showMenuWindow(x, y) {
+  const w = createMenuWindow()
+  if (w.webContents.isLoading()) {
+    pendingMenuPos = { x, y } // 首次加载：等 menu:size / menu:ready 定好尺寸再弹出
+    return
+  }
+  positionAndShowMenu(w, x, y)
+}
+
+function hideMenuWindow() {
+  pendingMenuPos = null
+  if (menuWindow && !menuWindow.isDestroyed()) menuWindow.hide()
+  if (menuOpen) {
+    menuOpen = false
+    if (mainWindow) mainWindow.webContents.send('island:menuOpen', false)
+  }
 }
 
 // 系统托盘：最小化后从托盘点回来；右键退出
@@ -137,6 +207,17 @@ function attachCover(state) {
     return state
   }
   const query = [title, state.artist].filter(Boolean).join(' ').trim()
+  // GSMTC 自带封面（播放器同款，汽水音乐等会经系统媒体会话暴露缩略图）优先直接用——
+  // 平台独有歌/Remix 在线搜不到，用它保证封面与播放器完全一致。
+  // 例外：切歌后（query 已变）封面字节仍与上一首完全一致 → 疑为 Windows 过期缩略图，
+  // 不信任，走在线搜索兜底（gsmtc.ps1 已做同款判定置空，这里是第二道防线）
+  const staleSame = query !== lastCoverQuery && typeof state.cover === 'string' && state.cover === lastCover
+  if (!staleSame && typeof state.cover === 'string' && state.cover.length > 20) {
+    lastCover = state.cover
+    lastCoverQuery = query
+    return state
+  }
+  // 无系统封面 → 在线搜索（仅标题/歌手变化时拉取）
   if (query !== lastCoverQuery) {
     lastCoverQuery = query
     lastCover = null // 新歌，封面待拉取
@@ -247,10 +328,41 @@ ipcMain.on('window:dragEnd', (event, pos) => {
 
 // 悬停放大：纯渲染进程 CSS（锚点类由 dragEnd / scale 下发），主进程无需处理
 
-// 自定义右键菜单的窗口尺寸开关
-ipcMain.on('window:menu', (event, open) => {
-  menuOpen = !!open
-  resizeWindow()
+// 右键菜单：弹出/收起独立菜单窗口（岛窗口尺寸全程不变）
+ipcMain.on('window:menu', (event, msg) => {
+  if (!msg) return
+  if (msg.open) {
+    // msg.x/y 是岛窗口内坐标（右键位置），换算成屏幕坐标后弹出菜单窗口
+    const b = mainWindow ? mainWindow.getBounds() : { x: 0, y: 0 }
+    showMenuWindow(b.x + (Number.isFinite(msg.x) ? msg.x : 0), b.y + (Number.isFinite(msg.y) ? msg.y : 0))
+  } else {
+    hideMenuWindow()
+  }
+})
+
+// 菜单窗口内容尺寸自适应（menu.js 加载后上报面板实际高度）
+ipcMain.on('menu:size', (event, h) => {
+  if (!menuWindow || menuWindow.isDestroyed()) return
+  const hh = Math.min(Math.max(120, Math.round(Number(h) || 240)), 600)
+  const b = menuWindow.getBounds()
+  menuWindow.setBounds({ x: b.x, y: b.y, width: MENU_WINDOW_SIZE.width, height: hh })
+})
+
+// 菜单窗口加载完成（menu.js 最后上报）：首次打开时定好尺寸后弹出
+ipcMain.on('menu:ready', () => {
+  if (menuWindow && !menuWindow.isDestroyed() && pendingMenuPos) {
+    positionAndShowMenu(menuWindow, pendingMenuPos.x, pendingMenuPos.y)
+  }
+})
+
+// 背景不透明度（菜单窗口滑杆 → 回传岛窗口应用 CSS 变量）
+ipcMain.on('window:bgOpacity', (event, v) => {
+  if (mainWindow) mainWindow.webContents.send('island:bgOpacity', Number(v))
+})
+
+// 波浪开关（菜单窗口勾选 → 回传岛窗口启停捕获流）
+ipcMain.on('window:wave', (event, v) => {
+  if (mainWindow) mainWindow.webContents.send('island:wave', !!v)
 })
 
 // 点击穿透：透明窗口区域不拦截鼠标（渲染进程按光标是否落在岛上动态切换；
@@ -260,26 +372,14 @@ ipcMain.on('window:interactive', (event, v) => {
   mainWindow.setIgnoreMouseEvents(!v, { forward: true })
 })
 
-// 岛屿缩放（渲染进程拖动滑杆时同步窗口尺寸）。
+// 岛屿缩放（菜单窗口滑杆触发；岛窗口随缩放实时 setBounds，预览即时生效）。
 // 中锚时保持岛中心不动；贴右锚贴屏幕右缘；左锚保持窗口 x
 ipcMain.on('window:scale', (event, s) => {
   islandScale = Math.min(1, Math.max(0.67, Number(s) || 1))
   if (!mainWindow) return
-  // 菜单打开时窗口锁死：每次 input 都 setBounds 会连续搬动透明窗口+菜单绝对定位，
-  // 造成闪/跳。zoom 已在渲染进程即时生效可预览，关闭菜单时 window:menu(false) 的 resizeWindow() 一次到位
-  if (menuOpen) return
-  const b = mainWindow.getBounds()
-  const wa = screen.getDisplayMatching(b).workArea
-  const right = wa.x + wa.width
-  const expandedW = Math.round(SIZE.expanded.width * islandScale)
-  const expandedH = Math.round(SIZE.expanded.height * islandScale)
-  let wx
-  if (anchorMode === 'right') wx = right - expandedW
-  else if (anchorMode === 'center') wx = b.x + b.width / 2 - expandedW / 2
-  else wx = b.x
-  wx = Math.min(Math.max(wx, wa.x), wa.x + wa.width - expandedW)
-  const wy = dockedTop ? wa.y : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - expandedH)
-  mainWindow.setBounds({ x: Math.round(wx), y: Math.round(wy), width: expandedW, height: expandedH })
+  resizeWindow()
+  // 回传岛窗口应用 CSS zoom（菜单窗口是值源头，这里只做单向同步，避免回环）
+  mainWindow.webContents.send('island:scale', islandScale)
 })
 
 // 固定位置（渲染进程菜单触发）
@@ -326,6 +426,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   music.stop()
+  if (menuWindow) { menuWindow.destroy(); menuWindow = null }
   if (tray) tray.destroy()
   tray = null
 })

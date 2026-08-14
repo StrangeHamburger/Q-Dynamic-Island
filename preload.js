@@ -49,9 +49,53 @@ contextBridge.exposeInMainWorld('island', {
     ipcRenderer.send('window:dragEnd', { x, y })
   },
 
-  // 自定义右键菜单开关（主进程据此切窗口尺寸）
-  setMenuOpen(open) {
-    ipcRenderer.send('window:menu', !!open)
+  // 右键菜单：open + 岛窗口内坐标 (x, y)（主进程换算屏幕坐标弹菜单窗口；open=false 时收起）
+  setMenuOpen(open, x, y) {
+    ipcRenderer.send('window:menu', {
+      open: !!open,
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+    })
+  },
+
+  // 背景不透明度（菜单窗口 → 主进程 → 岛窗口）
+  setBgOpacity(v) {
+    ipcRenderer.send('window:bgOpacity', v)
+  },
+
+  // 波浪开关（菜单窗口 → 主进程 → 岛窗口）
+  setWave(v) {
+    ipcRenderer.send('window:wave', !!v)
+  },
+
+  // 菜单窗口内容尺寸自适应上报
+  setMenuSize(h) {
+    ipcRenderer.send('menu:size', h)
+  },
+
+  // 菜单窗口加载完成（主进程据此首次弹出）
+  menuReady() {
+    ipcRenderer.send('menu:ready')
+  },
+
+  // 订阅缩放回传（菜单窗口改 scale → 岛窗口应用 CSS zoom）
+  onScale(callback) {
+    ipcRenderer.on('island:scale', (event, v) => callback(v))
+  },
+
+  // 订阅背景不透明度回传
+  onBgOpacity(callback) {
+    ipcRenderer.on('island:bgOpacity', (event, v) => callback(v))
+  },
+
+  // 订阅波浪开关回传
+  onWave(callback) {
+    ipcRenderer.on('island:wave', (event, v) => callback(v))
+  },
+
+  // 订阅菜单开合状态（岛窗口据此在菜单期间保持可交互）
+  onMenuOpen(callback) {
+    ipcRenderer.on('island:menuOpen', (event, v) => callback(!!v))
   },
 
   // 岛屿缩放比例（主进程据此调整窗口大小）

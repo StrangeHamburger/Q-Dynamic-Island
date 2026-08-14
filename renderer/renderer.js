@@ -10,14 +10,6 @@
   const btnPrev = document.getElementById('prev')
   const btnNext = document.getElementById('next')
 
-  // 右键菜单元素
-  const menuEl = document.getElementById('menu')
-  const scaleSlider = document.getElementById('scaleSlider')
-  const scaleValue = document.getElementById('scaleValue')
-  const pinCheck = document.getElementById('pinCheck')
-  const menuClose = document.getElementById('menuClose')
-  const menuQuit = document.getElementById('menuQuit')
-
   // 播放/暂停状态用 class 切换（两个 SVG 图标在按钮里交叉淡入淡出）
   function render(state) {
     const playing = state && state.hasSession && state.status === 'Playing'
@@ -158,7 +150,6 @@
   window.island.onPinned((pinned) => {
     isPinned = pinned
     islandEl.classList.toggle('pinned', pinned)
-    if (pinCheck) pinCheck.checked = pinned
   })
 
   // --- 悬停锚定：贴右时悬停向左放大 ---
@@ -305,7 +296,7 @@
   window.addEventListener('mousemove', (e) => {
     lastMouseX = e.clientX
     lastMouseY = e.clientY
-    if (dragging || menuOpen) return // 拖动/菜单展开时必须始终可交互
+    if (dragging || menuOpen) return // 拖动/菜单展开中必须始终可交互
     const el = document.elementFromPoint(e.clientX, e.clientY)
     const onIsland = !!el && islandEl.contains(el)
     if (onIsland) islandEl.classList.remove('forced-collapse') // 光标回岛：解除兜底收拢，:hover 重新接管
@@ -330,106 +321,37 @@
     // 三档：>0.9 歌名+歌手；0.74~0.9 只留歌名；≤0.74 紧凑（信息全隐藏）
     islandEl.classList.toggle('mid', scale > 0.74 && scale <= 0.9)
     islandEl.classList.toggle('compact', scale <= 0.74)
-    scaleSlider.value = scale
-    scaleValue.textContent = Math.round(scale * 100) + '%'
     localStorage.setItem('islandScale', String(scale))
-    window.island.setScale(scale)
   }
   applyScale(scale)
+  // 启动时把持久化尺寸同步给主进程（此后缩放由菜单窗口触发，经 onScale 回传应用）
+  window.island.setScale(scale)
+  window.island.onScale((s) => applyScale(s))
 
-  // --- 自定义右键菜单（黑色，替代原生菜单） ---
-  // 菜单区高度预算（与 main.js 的 MENU_SIZE 一致）：菜单打开时窗口在放大态基础上向下扩展出这块区域
-  const MENU_H = 250
-  const EXPANDED_H = 92 // 放大态高度（与 main.js SIZE.expanded 一致）
-
-  let menuOpen = false // 菜单展开中：期间强制窗口可交互，mousemove 不再根据光标位置切穿透
-  let lastMenuX = 0
-  let lastMenuY = 0
-  let pendingMenuShow = false
-
-  function showMenu() {
-    pendingMenuShow = false
-    menuEl.hidden = false
-    // 目标窗口高 = 放大态高 + 菜单区高（与 main.js MENU_SIZE 一致）。
-    // resize 完成前 window.innerHeight 还是小窗口的高，按它钳制会算出负上界、把菜单顶出屏幕上方；
-    // 用确定性目标值，等 resize 完成后 maybeShowMenu 会再跑一次 showMenu 用真实高度重新钳制
-    const targetH = Math.round(EXPANDED_H * scale) + MENU_H
-    menuEl.style.left = Math.min(Math.max(8, lastMenuX), Math.max(8, window.innerWidth - menuEl.offsetWidth - 8)) + 'px'
-    menuEl.style.top = Math.min(Math.max(72, lastMenuY), Math.max(72, targetH - menuEl.offsetHeight - 8)) + 'px'
-  }
-
-  // 窗口切到菜单高度（放大高 + 菜单区）后再摆放/显示菜单：否则窗口还是岛屿尺寸时，
-  // 菜单会先被旧窗口裁掉（只露出一半），等 resize 完成才补全。
-  // resize 完成后即使已由 500ms 兜底显示过，也再跑一次 showMenu 用真实高度重新钳制
-  function maybeShowMenu() {
-    if (!menuOpen) return
-    if (window.innerHeight !== Math.round(EXPANDED_H * scale) + MENU_H) return
-    showMenu()
-  }
-  window.addEventListener('resize', maybeShowMenu)
-
-  function openMenu() {
-    menuOpen = true
-    pinCheck.checked = isPinned
-    document.body.classList.add('menu-open')
-    pendingMenuShow = true
-    setInteractive(true) // 菜单需要点击：确保窗口可交互（menuOpen 期间 mousemove 不会把它切回穿透）
-    window.island.setMenuOpen(true)
-    maybeShowMenu()
-    // 兜底：万一 resize 事件没触发，也强制显示
-    setTimeout(() => {
-      if (pendingMenuShow) showMenu()
-    }, 500)
-  }
-
-  function closeMenu() {
-    menuOpen = false
-    pendingMenuShow = false
-    menuEl.hidden = true
-    document.body.classList.remove('menu-open')
-    window.island.setMenuOpen(false)
-  }
+  // --- 右键菜单（独立窗口，替代原生菜单） ---
+  // 菜单是主进程创建的一个透明置顶小窗口，随右键在光标处弹出。
+  // 岛窗口尺寸全程不变 → 开/关菜单都不会再有窗口收缩/闪烁
+  let menuOpen = false // 菜单窗口展开中：期间 mousemove 不切穿透、看门狗不强制收拢
+  window.island.onMenuOpen((open) => {
+    menuOpen = open
+  })
 
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault()
-    if (menuOpen) closeMenu()
-    else {
-      lastMenuX = e.clientX
-      lastMenuY = e.clientY
-      openMenu()
-    }
+    // 上报岛窗口内坐标（右键位置），主进程换算成屏幕坐标后弹出菜单窗口
+    window.island.setMenuOpen(true, e.clientX, e.clientY)
   })
 
-  // 点击菜单外部关闭（滑杆/勾选都在菜单内，不受影响）
-  document.addEventListener('click', (e) => {
-    if (menuOpen && !e.target.closest('.menu')) closeMenu()
-  })
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && menuOpen) closeMenu()
-  })
-
-  scaleSlider.addEventListener('input', () => applyScale(parseFloat(scaleSlider.value)))
-
-  // --- 背景不透明度滑块：覆盖 --island-alpha，越小岛越透（0.2~1，默认 0.92） ---
-  const bgOpacitySlider = document.getElementById('bgOpacitySlider')
-  const bgOpacityValue = document.getElementById('bgOpacityValue')
+  // --- 背景不透明度（--island-alpha）：菜单窗口滑杆经主进程回传应用 ---
   let bgOpacity = parseFloat(localStorage.getItem('islandBgOpacity'))
   if (!(bgOpacity >= 0.2 && bgOpacity <= 1)) bgOpacity = 0.92
   function applyBgOpacity(v) {
     bgOpacity = Math.min(1, Math.max(0.2, v))
     islandEl.style.setProperty('--island-alpha', String(bgOpacity))
-    bgOpacitySlider.value = String(bgOpacity)
-    bgOpacityValue.textContent = Math.round(bgOpacity * 100) + '%'
     localStorage.setItem('islandBgOpacity', String(bgOpacity))
   }
   applyBgOpacity(bgOpacity)
-  bgOpacitySlider.addEventListener('input', () => applyBgOpacity(parseFloat(bgOpacitySlider.value)))
-
-  pinCheck.addEventListener('change', () => window.island.setPinned(pinCheck.checked))
-
-  menuClose.addEventListener('click', () => closeMenu())
-  menuQuit.addEventListener('click', () => window.island.quit())
+  window.island.onBgOpacity((v) => applyBgOpacity(v))
 
   // --- 线稿波浪（岛内实时音频）：系统音频回环 → Analyser → rAF 画发光线稿 ---
   const waveCanvas = document.getElementById('wave')
@@ -579,7 +501,9 @@
     // 悬停弹起成普通岛后与平常一样贴底。
     // 用 .docked-idle 类而非 :hover——点击穿透会冻结 :hover，导致细条里画满幅波浪被裁成一条缝
     const strip = docked && islandEl.classList.contains('docked-idle')
-    const baseY = strip ? h * 0.5 : h - 12 * dpr
+    // 底边距按岛高比例取（任意缩放都贴底）：之前固定 12px，scale<1 时岛变矮、
+    // 12px 占比升高 → 波浪基线相对上移，视觉"偏上"。取 max(6px, 16% 高)
+    const baseY = strip ? h * 0.5 : h - Math.max(6 * dpr, h * 0.16)
     // 细条只有 16px 高：振幅占条高 ~50% 才看得出跳动（之前压到 1/4，动起来几乎没感觉）；
     // 靠下面每点 y 钳制在条内，loud 时顶到条上缘也不会溢出去被裁
     const rise = strip ? Math.max(3 * dpr, h * 0.5) : Math.max(16 * dpr, h * 0.3)
@@ -644,12 +568,9 @@
     ctx.restore()
   }
 
-  // 菜单开关：关闭时停掉捕获流（省资源，也避免系统“正在录制”指示一直挂着）
-  const waveCheck = document.getElementById('waveCheck')
-  waveCheck.checked = waveEnabled
-  islandEl.classList.toggle('wave-off', !waveEnabled)
-  waveCheck.addEventListener('change', () => {
-    waveEnabled = waveCheck.checked
+  // 波浪开关（菜单窗口勾选 → 主进程回传）：关闭时停掉捕获流（省资源，也避免系统“正在录制”指示一直挂着）
+  function setWave(on) {
+    waveEnabled = !!on
     localStorage.setItem('islandWave', waveEnabled ? '1' : '0')
     islandEl.classList.toggle('wave-off', !waveEnabled)
     if (waveEnabled) {
@@ -658,7 +579,9 @@
     } else {
       stopAudioCapture()
     }
-  })
+  }
+  islandEl.classList.toggle('wave-off', !waveEnabled)
+  window.island.onWave(setWave)
 
   // 启动：先尝试捕获（可能需要用户手势，失败则首次点击时重试）
   if (waveEnabled) ensureAudioCapture()

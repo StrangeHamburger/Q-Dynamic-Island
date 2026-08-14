@@ -37,34 +37,6 @@
     </div>
   </div>
 
-  <!-- 自定义右键菜单（黑色，代替原生菜单） -->
-  <div class="menu" id="menu" hidden>
-    <div class="menu-head">
-      <span class="menu-title">灵动岛</span>
-      <button class="menu-close" id="menuClose" aria-label="关闭菜单" title="关闭">×</button>
-    </div>
-    <label class="menu-item">
-      <input type="checkbox" id="pinCheck" />
-      <span>固定位置</span>
-    </label>
-    <label class="menu-item">
-      <input type="checkbox" id="waveCheck" />
-      <span>波浪</span>
-    </label>
-    <div class="menu-item menu-row">
-      <span class="menu-label">大小</span>
-      <input type="range" id="scaleSlider" min="0.67" max="1" step="0.01" />
-      <span class="menu-value" id="scaleValue">100%</span>
-    </div>
-    <div class="menu-item menu-row">
-      <span class="menu-label">背景不透明</span>
-      <input type="range" id="bgOpacitySlider" min="0.2" max="1" step="0.01" />
-      <span class="menu-value" id="bgOpacityValue">92%</span>
-    </div>
-    <div class="menu-sep"></div>
-    <div class="menu-item menu-danger" id="menuQuit">退出</div>
-  </div>
-
   <script src="renderer.js"></script>
 </body>
 </html>
