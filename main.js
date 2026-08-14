@@ -1,6 +1,6 @@
 // 桌面灵动岛 - 主进程
 // P2：接入 GSMTC 音乐控制（汽水音乐等）
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, screen } = require('electron')
+const { app, BrowserWindow, desktopCapturer, ipcMain, Menu, session, Tray, nativeImage, screen } = require('electron')
 const path = require('path')
 const { GsmtcBridge } = require('./music')
 const { getCover } = require('./cover')
@@ -8,6 +8,7 @@ const { getCover } = require('./cover')
 const SIZE = {
   expanded: { width: 420, height: 92 }, // 窗口实际尺寸（放大态）
 }
+const COLLAPSED = { width: 280, height: 56 } // 岛收起态尺寸（窗口仍用 expanded，岛在窗口内）
 
 let mainWindow = null
 const music = new GsmtcBridge()
@@ -19,6 +20,24 @@ let pinned = false // 是否固定位置（固定后不可拖动）
 let islandScale = 1 // 岛屿缩放（0.67~1），由渲染进程设置
 let menuOpen = false // 自定义右键菜单是否展开（展开时窗口切成菜单尺寸）
 
+// --- 锚定模式：悬停放大纯由渲染进程 CSS 承担，窗口全程不移动 → 无跨进程动画，丝滑不卡顿 ---
+// 岛在窗口内三种锚法，决定悬停放大方向：
+//   left   left:0               → 向右长（窗口 x = 岛左缘）
+//   center left:50% 左移半宽    → 两边对称长（窗口 x = 岛中心 - 放大宽/2）
+//   right  right:0              → 向左长（窗口 x = 屏幕右缘 - 放大宽）
+// 窗口始终 expanded 尺寸（菜单态例外）；收起态 / 贴顶收拢态都是岛在窗口内的纯 CSS 形态
+let anchorMode = 'center'
+let dockedTop = false // 岛已收拢到上边缘（细条波浪态；纯 CSS，窗口不缩尺寸）
+
+// 岛在窗口内的左缘偏移（收起岛左缘到窗口左缘的距离）：
+// 左锚 0；中锚 (放大宽-收起宽)/2（岛居中）；右锚 放大宽-收起宽（岛贴右）
+function islandOffset() {
+  const expandedW = Math.round(SIZE.expanded.width * islandScale)
+  const collapsedW = Math.round(COLLAPSED.width * islandScale)
+  const half = Math.round((expandedW - collapsedW) / 2)
+  return anchorMode === 'right' ? half * 2 : anchorMode === 'center' ? half : 0
+}
+
 function setPinned(v) {
   pinned = v
   if (mainWindow) {
@@ -26,18 +45,22 @@ function setPinned(v) {
   }
 }
 
-// 按当前状态调整窗口尺寸：菜单展开用菜单尺寸，否则按岛屿缩放比例。
-// 用 setBounds 同时设置尺寸和位置，并钳制在工作区内——避免菜单窗口
-// 从屏幕边缘展开时被截断（右键菜单显示一半）
-const MENU_SIZE = { width: 300, height: 240 } // 菜单展开：岛屿留在顶部收起态，菜单显示在下
+// 窗口尺寸：菜单展开用菜单尺寸，否则始终 expanded（岛在窗口内做形态切换，窗口不参与动画）。
+// 用 setBounds 同时设置尺寸和位置，并钳制在工作区内——避免菜单窗口从屏幕边缘展开时被截断
+const MENU_SIZE = { width: 300, height: 250 } // 菜单区高度预算：菜单打开时窗口在放大态基础上向下扩展出这块区域（含大小/背景两个滑块行）
 function resizeWindow() {
   if (!mainWindow) return
-  const w = menuOpen ? MENU_SIZE.width : Math.round(420 * islandScale)
-  const h = menuOpen ? MENU_SIZE.height : Math.round(92 * islandScale)
+  // 菜单打开时宽度保持放大态不变（岛在窗口内锚定，宽度不变 → 岛不水平移动/跳位），
+  // 只向下扩展高度容纳菜单面板；关闭恢复原高
+  const w = Math.round(SIZE.expanded.width * islandScale)
+  const h = menuOpen ? Math.round(SIZE.expanded.height * islandScale) + MENU_SIZE.height
+    : Math.round(SIZE.expanded.height * islandScale)
   const b = mainWindow.getBounds()
   const wa = screen.getDisplayMatching(b).workArea
   const x = Math.min(Math.max(b.x, wa.x), wa.x + wa.width - w)
-  const y = Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
+  const y = menuOpen ? Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
+    : dockedTop ? wa.y
+    : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
   mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h })
 }
 
@@ -148,6 +171,19 @@ function startPolling() {
   setInterval(tick, 1000)
 }
 
+// 光标离开窗口看门狗：点击穿透（setIgnoreMouseEvents）下浏览器收不到 mouseleave，
+// 岛的 :hover 会卡在展开态收不回来。主进程轮询光标位置，光标在窗口外时通知渲染进程兜底收拢。
+function startCursorWatchdog() {
+  setInterval(() => {
+    if (!mainWindow || menuOpen) return
+    const b = mainWindow.getBounds()
+    const c = screen.getCursorScreenPoint()
+    if (c.x < b.x || c.y < b.y || c.x > b.x + b.width || c.y > b.y + b.height) {
+      mainWindow.webContents.send('island:forceCollapse')
+    }
+  }, 120)
+}
+
 // 渲染进程发来的控制命令
 ipcMain.on('music:command', (event, cmd) => {
   if (['play', 'pause', 'next', 'prev', 'toggle'].includes(cmd)) {
@@ -155,18 +191,61 @@ ipcMain.on('music:command', (event, cmd) => {
   }
 })
 
-// 手动拖动窗口（渲染进程算好目标坐标后发来；按岛屿实际尺寸钳制在屏幕内）
+// 手动拖动窗口（渲染进程算好目标坐标后发来；按岛屿实际尺寸钳制岛在屏幕内，
+// 窗口比岛大，允许透明部分悬出屏幕）
 ipcMain.on('window:move', (event, pos) => {
   if (!mainWindow || pinned || !pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return
+  if (dockedTop) { // 拖起收拢的岛 = 解除收拢（渲染进程收到 docked false 后切回普通岛形态）
+    dockedTop = false
+    mainWindow.webContents.send('island:docked', false)
+  }
   const display = screen.getDisplayNearestPoint({ x: pos.x, y: pos.y })
   const wa = display.workArea
-  const [winW, winH] = mainWindow.getSize()
-  const w = Number.isFinite(pos.w) && pos.w > 0 ? pos.w : winW
-  const h = Number.isFinite(pos.h) && pos.h > 0 ? pos.h : winH
-  const x = Math.min(Math.max(pos.x, wa.x), wa.x + wa.width - w)
+  const w = Number.isFinite(pos.w) && pos.w > 0 ? pos.w : Math.round(COLLAPSED.width * islandScale)
+  const h = Number.isFinite(pos.h) && pos.h > 0 ? pos.h : Math.round(COLLAPSED.height * islandScale)
+  const islandLeft = Math.min(Math.max(pos.x + islandOffset(), wa.x), wa.x + wa.width - w)
   const y = Math.min(Math.max(pos.y, wa.y), wa.y + wa.height - h)
-  mainWindow.setPosition(Math.round(x), Math.round(y))
+  mainWindow.setPosition(Math.round(islandLeft - islandOffset()), Math.round(y))
 })
+
+// 拖拽结束：定锚点（岛中心落在屏幕哪一段 → 哪种放大方向），并判断是否收拢到上边缘。
+// 窗口始终 expanded，岛上 CSS 形态随 body.docked / 锚定类切换，不再搬窗口尺寸
+ipcMain.on('window:dragEnd', (event, pos) => {
+  if (!mainWindow || pinned || !pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return
+  const b = mainWindow.getBounds()
+  const wa = screen.getDisplayMatching(b).workArea
+  const right = wa.x + wa.width
+  const expandedW = Math.round(SIZE.expanded.width * islandScale)
+  const expandedH = Math.round(SIZE.expanded.height * islandScale)
+  const collapsedW = Math.round(COLLAPSED.width * islandScale)
+
+  const docked = pos.y <= wa.y + 2
+  dockedTop = docked
+
+  // 松手时岛左缘 = 窗口 x + 当前锚点偏移，据此算岛中心 → 定新锚点
+  const islandLeft = pos.x + islandOffset()
+  const islandCenter = islandLeft + collapsedW / 2
+  let wx, next
+  if (islandCenter + expandedW / 2 > right - 2) {
+    next = 'right'
+    wx = right - expandedW // 窗口贴右，岛 right:0 放大向左
+  } else if (islandCenter - expandedW / 2 < wa.x + 2) {
+    next = 'left'
+    wx = islandLeft // 窗口贴左，岛 left:0 放大向右
+  } else {
+    next = 'center'
+    wx = islandCenter - expandedW / 2 // 岛居中，悬停两边对称长
+  }
+  anchorMode = next
+  wx = Math.min(Math.max(wx, wa.x), wa.x + wa.width - expandedW)
+  const wy = docked ? wa.y : Math.min(Math.max(pos.y, wa.y), wa.y + wa.height - expandedH)
+  mainWindow.setBounds({ x: Math.round(wx), y: Math.round(wy), width: expandedW, height: expandedH })
+  mainWindow.webContents.send('island:docked', docked)
+  mainWindow.webContents.send('island:anchorRight', next === 'right')
+  mainWindow.webContents.send('island:anchorCenter', next === 'center')
+})
+
+// 悬停放大：纯渲染进程 CSS（锚点类由 dragEnd / scale 下发），主进程无需处理
 
 // 自定义右键菜单的窗口尺寸开关
 ipcMain.on('window:menu', (event, open) => {
@@ -174,10 +253,33 @@ ipcMain.on('window:menu', (event, open) => {
   resizeWindow()
 })
 
-// 岛屿缩放（渲染进程拖动滑杆时同步窗口尺寸）
+// 点击穿透：透明窗口区域不拦截鼠标（渲染进程按光标是否落在岛上动态切换；
+// forward 让穿透期间仍能收到 mousemove，据此判断光标何时回到岛上）
+ipcMain.on('window:interactive', (event, v) => {
+  if (!mainWindow) return
+  mainWindow.setIgnoreMouseEvents(!v, { forward: true })
+})
+
+// 岛屿缩放（渲染进程拖动滑杆时同步窗口尺寸）。
+// 中锚时保持岛中心不动；贴右锚贴屏幕右缘；左锚保持窗口 x
 ipcMain.on('window:scale', (event, s) => {
   islandScale = Math.min(1, Math.max(0.67, Number(s) || 1))
-  resizeWindow()
+  if (!mainWindow) return
+  // 菜单打开时窗口锁死：每次 input 都 setBounds 会连续搬动透明窗口+菜单绝对定位，
+  // 造成闪/跳。zoom 已在渲染进程即时生效可预览，关闭菜单时 window:menu(false) 的 resizeWindow() 一次到位
+  if (menuOpen) return
+  const b = mainWindow.getBounds()
+  const wa = screen.getDisplayMatching(b).workArea
+  const right = wa.x + wa.width
+  const expandedW = Math.round(SIZE.expanded.width * islandScale)
+  const expandedH = Math.round(SIZE.expanded.height * islandScale)
+  let wx
+  if (anchorMode === 'right') wx = right - expandedW
+  else if (anchorMode === 'center') wx = b.x + b.width / 2 - expandedW / 2
+  else wx = b.x
+  wx = Math.min(Math.max(wx, wa.x), wa.x + wa.width - expandedW)
+  const wy = dockedTop ? wa.y : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - expandedH)
+  mainWindow.setBounds({ x: Math.round(wx), y: Math.round(wy), width: expandedW, height: expandedH })
 })
 
 // 固定位置（渲染进程菜单触发）
@@ -199,10 +301,18 @@ if (!gotTheLock) {
   })
 
   app.whenReady().then(() => {
+    // 系统音频回环捕获：渲染进程 getDisplayMedia 请求时，回「屏幕源 + loopback 音频」。
+    // WASAPI 回环截取全部系统音频（汽水音乐走共享模式，可捕获）；视频轨随即被渲染进程停掉
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+      desktopCapturer.getSources({ types: ['screen'] })
+        .then((sources) => callback({ video: sources[0] || { id: '', name: '' }, audio: 'loopback' }))
+        .catch(() => callback({ audio: 'loopback' }))
+    })
     music.start()
     createTray()
     createWindow()
     startPolling()
+    startCursorWatchdog()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

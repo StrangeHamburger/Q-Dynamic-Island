@@ -14,6 +14,26 @@ contextBridge.exposeInMainWorld('island', {
     ipcRenderer.on('island:pinned', (event, v) => callback(v))
   },
 
+  // 订阅右缘锚定状态（贴右时悬停向左放大）
+  onAnchorRight(callback) {
+    ipcRenderer.on('island:anchorRight', (event, v) => callback(v))
+  },
+
+  // 订阅中间对称放大状态（岛中心不动、两边对称长）
+  onAnchorCenter(callback) {
+    ipcRenderer.on('island:anchorCenter', (event, v) => callback(v))
+  },
+
+  // 订阅收拢态（拖到上边缘收成细条波浪；悬停弹起/移开收回）
+  onDocked(callback) {
+    ipcRenderer.on('island:docked', (event, v) => callback(!!v))
+  },
+
+  // 订阅「光标已离开窗口」（主进程看门狗）：点击穿透下 :hover 可能卡住，据此兜底收拢
+  onForceCollapse(callback) {
+    ipcRenderer.on('island:forceCollapse', () => callback())
+  },
+
   // 发送音乐控制命令
   musicCommand(cmd) {
     ipcRenderer.send('music:command', cmd)
@@ -24,6 +44,11 @@ contextBridge.exposeInMainWorld('island', {
     ipcRenderer.send('window:move', { x, y, w, h })
   },
 
+  // 拖拽结束（松手）：主进程据此判断是否拖到上边缘 → 收拢成边缘波浪
+  dragEnd(x, y) {
+    ipcRenderer.send('window:dragEnd', { x, y })
+  },
+
   // 自定义右键菜单开关（主进程据此切窗口尺寸）
   setMenuOpen(open) {
     ipcRenderer.send('window:menu', !!open)
@@ -32,6 +57,11 @@ contextBridge.exposeInMainWorld('island', {
   // 岛屿缩放比例（主进程据此调整窗口大小）
   setScale(s) {
     ipcRenderer.send('window:scale', s)
+  },
+
+  // 点击穿透开关：false 时透明窗口区域不拦截鼠标（消除「虚拟墙」）
+  setInteractive(v) {
+    ipcRenderer.send('window:interactive', !!v)
   },
 
   // 固定 / 取消固定

@@ -88,10 +88,8 @@ async function searchCover(query) {
   }
 }
 
-// 对外：根据标题+歌手拿封面（带缓存）
-async function getCover(title, artist) {
-  const query = [title, artist].filter(Boolean).join(' ').trim()
-  if (!query) return null
+// 单个查询串的封面搜索（带缓存 + 并发去重）
+async function queryCover(query) {
   if (cache.has(query)) return cache.get(query)
   if (inflight.has(query)) return inflight.get(query)
 
@@ -106,6 +104,20 @@ async function getCover(title, artist) {
   inflight.set(query, promise)
   promise.then(() => inflight.delete(query), () => inflight.delete(query))
   return promise
+}
+
+// 对外：根据标题+歌手拿封面。
+// GSMTC 不提供封面字段，这里联网搜索。主查询「歌名+歌手」三个源全失败时，
+// 再只拿歌名搜一轮 —— 组合搜不到的小众歌/平台独有歌，纯歌名命中率往往更高。
+async function getCover(title, artist) {
+  const query = [title, artist].filter(Boolean).join(' ').trim()
+  if (!query) return null
+  let dataUrl = await queryCover(query)
+  if (!dataUrl && title) {
+    const t = title.trim()
+    if (t && t !== query) dataUrl = await queryCover(t)
+  }
+  return dataUrl
 }
 
 module.exports = { getCover }

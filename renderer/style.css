@@ -19,6 +19,7 @@ html, body {
 .island {
   --accent: 80, 84, 90;      /* 封面主色（r,g,b），由 JS 覆盖 */
   --accent-deep: 40, 42, 46; /* 主键渐变深色端，由 JS 覆盖 */
+  --island-alpha: 0.92;      /* 岛背景不透明度（菜单滑块覆盖，越小越透） */
 
   position: absolute;
   left: 0;   /* 锚定窗口左缘：收起/展开/菜单切换时封面与胶囊左缘都不漂移 */
@@ -33,7 +34,7 @@ html, body {
   gap: 10px;
   padding: 0 12px;
 
-  background: rgba(20, 20, 24, 0.92);
+  background: rgba(20, 20, 24, var(--island-alpha));
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
 
@@ -53,6 +54,27 @@ html, body {
     border-radius 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* 线稿波浪画布：绝对铺满整岛、内容之下、不拦截任何指针事件 */
+.wave {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+.island.wave-off .wave {
+  opacity: 0;
+}
+/* 波浪在岛背景之上、封面/文字/按钮之下：内容层相对定位提升（absolute 画布默认压过非定位内容） */
+.island > .cover,
+.island > .info,
+.island > .controls {
+  position: relative;
+  z-index: 1;
+}
+
 /* 悬停放大态 */
 .island:hover {
   width: 420px;
@@ -70,6 +92,22 @@ html, body {
   overflow: hidden;
   cursor: pointer;
   transition: width 0.32s ease, height 0.32s ease;
+}
+/* 无封面兜底：柔和渐变 + 音符图标，不再空圈（在线封面搜不到的小众歌也显得完整） */
+.cover.no-cover {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 58%),
+    linear-gradient(145deg, rgba(122, 128, 138, 0.42), rgba(46, 50, 56, 0.6));
+}
+.cover.no-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 20px;
+  height: 20px;
+  opacity: 0.6;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='rgba(255,255,255,0.9)'%3E%3Cpath d='M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 .cover-img {
   width: 100%;
@@ -217,6 +255,147 @@ html, body {
   width: 40px;
   height: 40px;
   transition: none;
+}
+
+/* 锚定方向（窗口始终 expanded，岛在窗口内三种锚法；悬停放大纯 CSS，窗口不移动） */
+/* 贴右：岛右缘贴窗口右缘，悬停向左长，贴屏幕右缘不溢出 */
+.island.anchor-right {
+  left: auto;
+  right: 0;
+}
+/* 贴中：岛在窗口内居中，悬停两边对称长（视觉中心不动） */
+.island.anchor-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* 贴顶收拢（边缘波浪）：岛收成沿上边缘的细条（280×16），只留发光线稿波浪。
+   窗口尺寸不变，纯 CSS 形态切换；悬停放大成普通岛（与普通悬停同一套过渡），移开收回。
+   条贴上边缘：上方是直角（贴齐屏幕顶，不露缝），下方圆角（0 0 8px 8px） */
+body.docked .island {
+  width: 280px;
+  height: 16px;
+  border-radius: 0 0 8px 8px;
+}
+body.docked .island:not(:hover) .cover,
+body.docked .island:not(:hover) .info,
+body.docked .island:not(:hover) .controls {
+  display: none;
+}
+body.docked .island:hover {
+  width: 420px;
+  height: 92px;
+  border-radius: 46px;
+}
+/* 从收拢态拖起：body.docked 的 16px 规则特异性高过 .island.dragging，
+   若不覆盖会把拖拽中的岛又压回细条（也会被 body.docked :hover 撑回 92px） */
+body.docked .island.dragging,
+body.docked .island.dragging:hover {
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+  transition: none;
+}
+
+/* 拖拽结束瞬间锁住收起态：等主进程确认锚定方向后再展开，
+   避免贴右时岛先向右长出屏幕、收到锚定后再向左跳位 */
+.island.hover-lock,
+.island.hover-lock:hover {
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+  transition: none;
+}
+.island.hover-lock .cover,
+.island.hover-lock:hover .cover {
+  width: 40px;
+  height: 40px;
+  transition: none;
+}
+.island.hover-lock .controls,
+.island.hover-lock:hover .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 兜底收拢：点击穿透下浏览器收不到 mouseleave，:hover 会卡在展开态。
+   主进程看门狗发现光标已离开窗口 → 下发 forceCollapse → 本类收回起态。
+   收拢显式用更慢的过渡（0.5s，悬停展开是 0.32s），鼠标离开也有一段平滑滑回的手感；
+   光标回到岛上（mousemove/pointerenter 命中岛）时由 JS 移除，:hover 重新接管 */
+.island.forced-collapse,
+.island.forced-collapse:hover {
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+  transition:
+    width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.island.forced-collapse .cover,
+.island.forced-collapse:hover .cover {
+  width: 40px;
+  height: 40px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.island.forced-collapse .controls,
+.island.forced-collapse:hover .controls {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+/* 收拢态（贴顶细条）下兜底：光标离开窗口但 :hover 卡住时，同样滑回细条而非普通收起态。
+   内容用 opacity 淡出（display 不可过渡），由岛 overflow:hidden 裁剪；条只有 16px 高，缩完自然藏住 */
+body.docked .island.forced-collapse,
+body.docked .island.forced-collapse:hover {
+  width: 280px;
+  height: 16px;
+  border-radius: 0 0 8px 8px;
+  transition:
+    width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.docked .island.forced-collapse .cover,
+body.docked .island.forced-collapse .info,
+body.docked .island.forced-collapse .controls {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+/* 收缩态「光标真实不在岛上」：点击穿透会冻结 :hover，导致 16px 细条里仍显示内容、
+   波浪还按放大态幅度画。JS 按真实光标位置维护 .docked-idle（mousemove 实时），
+   命中即强制回到细条并隐藏内容——不依赖失真的 :hover/:not(:hover) */
+body.docked .island.docked-idle,
+body.docked .island.docked-idle:hover {
+  width: 280px;
+  height: 16px;
+  border-radius: 0 0 8px 8px;
+  transition:
+    width 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+body.docked .island.docked-idle .cover,
+body.docked .island.docked-idle .info,
+body.docked .island.docked-idle .controls {
+  display: none;
+}
+/* 拖拽/锚定锁定期不被 docked-idle 压回细条（拖拽与收拢的态互斥，此处兜底防闪） */
+body.docked .island.docked-idle.dragging,
+body.docked .island.docked-idle.hover-lock,
+body.docked .island.docked-idle.dragging:hover,
+body.docked .island.docked-idle.hover-lock:hover {
+  width: 280px;
+  height: 56px;
+  border-radius: 28px;
+  transition: none;
+}
+
+/* 中等尺寸：只留歌名，隐藏歌手 */
+.island.mid .artist {
+  display: none;
 }
 
 /* 小尺寸（紧凑模式）：隐藏歌名/歌手；封面仍贴最左，控制钮靠右 */
