@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
+  <title>灵动岛</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="island" id="island">
+    <!-- 左侧：封面（P2 接 GSMTC 封面 / 在线封面 + 取色渐变） -->
+    <div class="cover" id="cover">
+      <img class="cover-img" id="coverImg" alt="" />
+    </div>
+
+    <!-- 中间：歌名 / 歌手 -->
+    <div class="info" id="info">
+      <div class="title" id="title">未播放</div>
+      <div class="artist" id="artist">等待音乐…</div>
+    </div>
+
+    <!-- 右侧：控制按钮（收起时隐藏，悬停放大后出现） -->
+    <div class="controls" id="controls">
+      <button class="btn" id="prev" title="上一首" aria-label="上一首">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button class="btn btn-main" id="toggle" title="播放/暂停" aria-label="播放/暂停"></button>
+      <button class="btn" id="next" title="下一首" aria-label="下一首">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

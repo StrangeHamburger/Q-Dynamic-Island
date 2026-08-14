@@ -1,0 +1,14 @@
+{
+  "name": "dynamic-island",
+  "version": "0.1.0",
+  "description": "桌面灵动岛 - 音乐控制 + 消息通知",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^43.4.0"
+  }
+}
