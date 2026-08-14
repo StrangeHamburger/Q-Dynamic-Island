@@ -209,8 +209,13 @@ html, body {
   opacity: 0;
   pointer-events: none;
 }
+/* 拖动时：封面也要回到收起态尺寸。
+   否则从悬停放大态抓起时 .island:hover .cover 仍是 68×68，
+   而容器已被强制成 56px 高，封面会挤爆/被裁掉——这就是封面怪怪的原因 */
 .island.dragging .cover,
 .island.dragging:hover .cover {
+  width: 40px;
+  height: 40px;
   transition: none;
 }
 
