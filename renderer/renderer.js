@@ -7,13 +7,16 @@
   const islandEl = document.getElementById('island')
   const toggleEl = document.getElementById('toggle')
 
+  let isPlaying = false // 播放状态，驱动律动形态状态机（播放→真 FFT，暂停→呼吸线）
+
   const btnPrev = document.getElementById('prev')
   const btnNext = document.getElementById('next')
 
   // 播放/暂停状态用 class 切换（两个 SVG 图标在按钮里交叉淡入淡出）
   function render(state) {
     const playing = state && state.hasSession && state.status === 'Playing'
-    isPlaying = playing // 供波浪状态机驱动（播放→真 FFT，暂停→呼吸线）
+    isPlaying = playing // 供乐观切换对账 + 驱动律动状态机
+    Visualizer.setPlaying(playing)
     toggleEl.classList.toggle('playing', playing)
 
     if (!state || !state.hasSession) {
@@ -47,7 +50,7 @@
     const img = new Image()
     img.onload = () => {
       const colors = extractColors(img)
-      setAccent(colors ? colors[0] : null)
+      setAccent(colors)
       coverImg.src = src
       coverImg.style.display = 'block'
     }
@@ -59,7 +62,9 @@
     img.src = src
   }
 
-  // 提取封面主色，返回 [[r,g,b], [r,g,b]]；取不到则 null
+  // 提取封面主色（最多 3 个），返回 [[r,g,b], ...]；取不到则 null。
+  // 灰色过滤：量化后三通道差 ≤1 视为灰，灰占比 < 3/5 时排除灰桶（优先鲜艳色），
+  // 灰占比 ≥ 3/5 说明封面本身灰色调，才允许用灰。
   function extractColors(img) {
     const size = 24
     const c = document.createElement('canvas')
@@ -70,60 +75,111 @@
       ctx.drawImage(img, 0, 0, size, size)
       const data = ctx.getImageData(0, 0, size, size).data
 
-      // 量化到 4bit/通道后统计
+      // 量化到 4bit/通道后统计（每通道 16 级）
       const buckets = new Map()
+      let totalPx = 0
+      let grayPx = 0
       for (let i = 0; i < data.length; i += 4) {
         if (data[i + 3] < 125) continue // 跳过透明
+        totalPx++
         const r = data[i] >> 4
         const g = data[i + 1] >> 4
         const b = data[i + 2] >> 4
         const key = (r << 8) | (g << 4) | b
         buckets.set(key, (buckets.get(key) || 0) + 1)
+        if (Math.abs(r - g) <= 1 && Math.abs(g - b) <= 1 && Math.abs(r - b) <= 1) grayPx++
       }
       if (buckets.size < 2) return null
 
-      const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1])
       const toRgb = (k) => [
         ((k >> 8) & 0xf) * 16 + 8,
         ((k >> 4) & 0xf) * 16 + 8,
         (k & 0xf) * 16 + 8,
       ]
-
-      const c0 = toRgb(sorted[0][0])
-      // 第二色选「与主色距离最远」的，避免两个相近色合成平灰
-      let bestKey = sorted[1][0]
-      let bestDist = -1
-      for (let i = 1; i < Math.min(sorted.length, 8); i++) {
-        const rgb = toRgb(sorted[i][0])
-        const dist = (rgb[0] - c0[0]) ** 2 + (rgb[1] - c0[1]) ** 2 + (rgb[2] - c0[2]) ** 2
-        if (dist > bestDist) {
-          bestDist = dist
-          bestKey = sorted[i][0]
-        }
+      const isGray = (k) => {
+        const r = (k >> 8) & 0xf
+        const g = (k >> 4) & 0xf
+        const b = k & 0xf
+        return Math.abs(r - g) <= 1 && Math.abs(g - b) <= 1 && Math.abs(r - b) <= 1
       }
-      return [c0, toRgb(bestKey)]
+
+      const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1])
+      // 灰占比 < 3/5 → 排除灰桶（优先鲜艳色）；否则保留（封面本身灰色调）
+      let candidates = sorted
+      if (grayPx / totalPx < 0.6) {
+        const vivid = sorted.filter(([k]) => !isGray(k))
+        if (vivid.length >= 2) candidates = vivid
+      }
+
+      // 主色 = 出现最多；次色在前 10 高频色里选与已选「距离最远」的，保证三色差异大
+      const pool = candidates.slice(0, Math.min(candidates.length, 10))
+      const picked = [pool[0][0]]
+      const result = [toRgb(pool[0][0])]
+      for (let n = 1; n < 3 && n < pool.length; n++) {
+        let bestKey = null
+        let bestDist = -1
+        for (const [key] of pool) {
+          if (picked.includes(key)) continue
+          let minDist = Infinity
+          for (const pk of picked) {
+            const a = toRgb(key)
+            const b = toRgb(pk)
+            const dist = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2
+            minDist = Math.min(minDist, dist)
+          }
+          if (minDist > bestDist) { bestDist = minDist; bestKey = key }
+        }
+        if (bestKey == null) break
+        picked.push(bestKey)
+        result.push(toRgb(bestKey))
+      }
+      return result
     } catch (e) {
       return null
     }
   }
 
+  // HSL 提亮：暗色只提亮度、锁住色相和饱和度，避免向灰/白线性插值洗成灰色
+  function liftLuma(rgb, minLuma) {
+    let r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255
+    const max = Math.max(r, g, b), min = Math.min(r, g, b)
+    let h, s, l = (max + min) / 2
+    if (max === min) { h = 0; s = 0 } // 无饱和（本身是灰）
+    else {
+      const d = max - min
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0)
+      else if (max === g) h = (b - r) / d + 2
+      else h = (r - g) / d + 4
+      h /= 6
+    }
+    l = Math.max(l, minLuma)
+    if (s === 0) { r = g = b = l }
+    else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+      const p = 2 * l - q
+      const f = (t) => { if (t < 0) t += 1; if (t > 1) t -= 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p }
+      r = f(h + 1 / 3); g = f(h); b = f(h - 1 / 3)
+    }
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)]
+  }
+
   // 把主色写进 CSS 变量，供主键渐变/光晕复用。
   // 无封面（切歌中/失败）时用中性灰，不显示任何残留/过渡颜色
-  function setAccent(rgb) {
-    let c = rgb ? rgb.slice() : [76, 80, 86]
-    // 封面色太暗会让主键看不清：向浅灰提亮到可辨识亮度
-    const lum = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255
-    if (lum < 0.3) {
-      const t = Math.min(1, (0.3 - lum) / 0.3)
-      for (let i = 0; i < 3; i++) c[i] = Math.round(c[i] + (176 - c[i]) * t)
-    }
-    islandEl.style.setProperty('--accent', c.join(','))
-    islandEl.style.setProperty('--accent-deep', c.map((v) => Math.round(v * 0.5)).join(','))
+  function setAccent(colors) {
+    const list = colors && colors.length ? colors : [[76, 80, 86]]
+    const c0 = liftLuma(list[0], 0.3) // 暗色提亮但保色相/饱和度
+    islandEl.style.setProperty('--accent', c0.join(','))
+    islandEl.style.setProperty('--accent-deep', c0.map((v) => Math.round(v * 0.5)).join(','))
+    // 次色备用：--accent2 / --accent3（同样提亮），供多形态配色扩展
+    if (list[1]) islandEl.style.setProperty('--accent2', liftLuma(list[1], 0.3).join(','))
+    if (list[2]) islandEl.style.setProperty('--accent3', liftLuma(list[2], 0.3).join(','))
   }
 
   // 暂停键延迟优化：点击瞬间乐观切换图标，等 GSMTC 真实状态回来再对账
   function optimisticToggle() {
     isPlaying = !isPlaying
+    Visualizer.setPlaying(isPlaying)
     toggleEl.classList.toggle('playing', isPlaying)
   }
 
@@ -233,11 +289,8 @@
 
   islandEl.addEventListener('pointerdown', (e) => {
     if (isPinned) return
-    // 音频捕获首次因缺用户手势失败：这次点击就是手势，重试
-    if (captureFailed && waveEnabled) {
-      captureFailed = false
-      ensureAudioCapture()
-    }
+    // 音频捕获首次因缺用户手势失败：这次点击就是手势，重试（逻辑见 visualizer.js）
+    Visualizer.retryCapture()
     if (e.target.closest('.btn') || e.target.closest('.cover')) return // 按钮/封面不参与拖动
     dragging = true
     islandEl.classList.add('dragging') // 拖动时不悬停放大
@@ -352,238 +405,7 @@
   }
   applyBgOpacity(bgOpacity)
   window.island.onBgOpacity((v) => applyBgOpacity(v))
-
-  // --- 线稿波浪（岛内实时音频）：系统音频回环 → Analyser → rAF 画发光线稿 ---
-  const waveCanvas = document.getElementById('wave')
-  const waveCtx = waveCanvas.getContext('2d')
-  const FREQ_BINS = 56 // 对数抽 56 个频点，平滑贝塞尔连线
-
-  let isPlaying = false // render() 更新，驱动波浪状态机
-  let waveEnabled = localStorage.getItem('islandWave') !== '0'
-  let audioCtx = null
-  let analyser = null
-  let captureStream = null
-  let captureOk = false
-  let captureFailed = false
-  let freqData = null
-  const smooth = new Array(FREQ_BINS).fill(0.05)
-  let breatheTime = 0
-  let bassEnv = 0 // 贝斯鼓点包络（快攻慢放），驱动光晕脉动 + 波形上抬 + 低频顶高
-  let gainEnv = 1 // 自动增益包络：安静的歌把幅度拉上来、吵闹的歌压下去
-
-  // 捕获系统音频：getDisplayMedia 借道屏幕源（主进程回 loopback），视频轨随即停掉
-  async function ensureAudioCapture() {
-    if (captureOk || captureFailed || !waveEnabled) return
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 1 },
-        audio: true,
-      })
-      captureStream = stream
-      stream.getVideoTracks().forEach((t) => t.stop())
-      audioCtx = new AudioContext()
-      const src = audioCtx.createMediaStreamSource(stream)
-      analyser = audioCtx.createAnalyser()
-      analyser.fftSize = 512
-      analyser.smoothingTimeConstant = 0.72
-      src.connect(analyser)
-      freqData = new Uint8Array(analyser.frequencyBinCount)
-      captureOk = true
-      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
-    } catch (e) {
-      captureFailed = true // 无用户手势等失败：首次点击时重试
-    }
-  }
-
-  function stopAudioCapture() {
-    captureOk = false
-    if (captureStream) {
-      captureStream.getTracks().forEach((t) => t.stop())
-      captureStream = null
-    }
-    if (audioCtx) {
-      audioCtx.close().catch(() => {})
-      audioCtx = null
-    }
-    analyser = null
-    freqData = null
-  }
-
-  // canvas 尺寸跟随岛屿实际渲染尺寸（含 zoom、悬停放大）与 dpr；每帧只在实际变化时重设
-  let waveW = 0
-  let waveH = 0
-  function syncWaveSize() {
-    const r = islandEl.getBoundingClientRect()
-    const dpr = window.devicePixelRatio || 1
-    const w = Math.round(r.width * dpr)
-    const h = Math.round(r.height * dpr)
-    if (w === waveW && h === waveH) return
-    waveW = w
-    waveH = h
-    // 只设 canvas 像素分辨率，不改 CSS 尺寸：.wave 已 width/height:100% 跟随岛。
-    // 若按 getBoundingClientRect（已含 zoom）再设 style 尺寸，会与父级 zoom 叠加二次缩放，
-    // 缩放滑杆调小时波浪会比岛小一圈、不铺满
-    waveCanvas.width = w
-    waveCanvas.height = h
-  }
-
-  // 读当前 --accent（封面主色）作为波浪颜色
-  function accentRgb() {
-    const p = getComputedStyle(islandEl).getPropertyValue('--accent').trim()
-    const m = p.match(/\d+/g)
-    return m ? m.map((s) => parseInt(s, 10) || 0) : [80, 84, 90]
-  }
-
-  // 波浪主色：--accent 太暗时往白提亮，保证在深色岛背景上看得清跳动。
-  // setAccent 只对更暗的封面色兜底，中等偏暗色（酒红/墨绿/深蓝）直接描边会融进背景
-  function waveColor() {
-    const rgb = accentRgb()
-    const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
-    if (lum < 0.45) {
-      const t = Math.min(1, (0.45 - lum) / 0.45)
-      for (let i = 0; i < 3; i++) rgb[i] = Math.round(rgb[i] + (235 - rgb[i]) * t)
-    }
-    return rgb
-  }
-
-  // 二次贝塞尔过中点平滑连线
-  function tracePath(pts) {
-    const ctx = waveCtx
-    ctx.beginPath()
-    ctx.moveTo(pts[0].x, pts[0].y)
-    for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i].x + pts[i + 1].x) / 2
-      const my = (pts[i].y + pts[i + 1].y) / 2
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my)
-    }
-    const last = pts[pts.length - 1]
-    ctx.lineTo(last.x, last.y)
-  }
-
-  function drawWave() {
-    requestAnimationFrame(drawWave)
-    if (!waveEnabled) return
-    const ctx = waveCtx
-    if (!ctx) return
-    syncWaveSize()
-    const w = waveW
-    const h = waveH
-    if (w < 2 || h < 2) return
-    const dpr = window.devicePixelRatio || 1
-    breatheTime += 1
-
-    // 每帧清空重画，不做尾迹残留：旧像素淡出会糊成一片"蒙雾"，很廉价。
-    // 波浪的流畅感靠 smooth[] 指数平滑，不靠残影
-    ctx.clearRect(0, 0, w, h)
-
-    // 状态机：播放+已捕获 → 真 FFT；播放但未捕获 → 极淡呼吸；暂停/无会话 → 低平缓呼吸线
-    let k = 0.35
-    let minV = 0.08
-    let maxV = 1
-    let breatheMix = 0
-    if (isPlaying && analyser) {
-      analyser.getByteFrequencyData(freqData)
-    } else if (isPlaying) {
-      k = 0.12
-      minV = 0.05
-      maxV = 0.16
-      breatheMix = 1
-    } else {
-      k = 0.08
-      minV = 0.05
-      maxV = 0.26
-      breatheMix = 1
-    }
-    // 双频呼吸：两个正弦叠加，静止状态也带点不规则"活气"
-    const breathe = 0.5 + 0.5 * Math.sin(breatheTime * 0.045 + Math.sin(breatheTime * 0.013) * 2.2)
-
-    // 贴顶收拢态（docked-idle，真实光标在岛外）波浪垂直居中；
-    // 悬停弹起成普通岛后与平常一样贴底。
-    // 用 .docked-idle 类而非 :hover——点击穿透会冻结 :hover，导致细条里画满幅波浪被裁成一条缝
-    const strip = docked && islandEl.classList.contains('docked-idle')
-    // 底边距按岛高比例取（任意缩放都贴底）：之前固定 12px，scale<1 时岛变矮、
-    // 12px 占比升高 → 波浪基线相对上移，视觉"偏上"。取 max(6px, 16% 高)
-    const baseY = strip ? h * 0.5 : h - Math.max(6 * dpr, h * 0.16)
-    // 细条只有 16px 高：振幅占条高 ~50% 才看得出跳动（之前压到 1/4，动起来几乎没感觉）；
-    // 靠下面每点 y 钳制在条内，loud 时顶到条上缘也不会溢出去被裁
-    const rise = strip ? Math.max(3 * dpr, h * 0.5) : Math.max(16 * dpr, h * 0.3)
-    const x0 = 0
-    const xStep = w / (FREQ_BINS - 1)
-
-    // 低频能量（前 3 个频点）→ 贝斯包络：快攻慢放
-    let bass = 0
-    if (analyser) {
-      for (let i = 0; i < 3; i++) bass = Math.max(bass, freqData[i] / 255)
-    }
-    bassEnv += (bass - bassEnv) * (bass > bassEnv ? 0.55 : 0.12)
-
-    const pts = []
-    let energy = 0
-    for (let i = 0; i < FREQ_BINS; i++) {
-      let v
-      if (analyser) {
-        const bin = 1 + Math.round(Math.pow(200, i / (FREQ_BINS - 1))) // 对数分布 1..200
-        v = freqData[Math.min(bin, freqData.length - 1)] / 255
-      } else {
-        v = 0.5 + 0.5 * Math.sin(breatheTime * 0.03 + i * 0.42)
-      }
-      // 贝斯段（左侧低频点）额外顶高：鼓点有"冲击感"
-      if (analyser && i < FREQ_BINS * 0.18) {
-        v = Math.min(1, v + bassEnv * 0.35 * (1 - i / (FREQ_BINS * 0.18)))
-      }
-      // 暂停/无捕获时用呼吸波驱动；播放时轻微叠加防呆板
-      v = v * (1 - breatheMix * 0.65) + breathe * breatheMix * 0.65
-      v = minV + v * (maxV - minV)
-      smooth[i] += (v - smooth[i]) * k // 指数平滑：弹簧跟随感
-      energy += smooth[i]
-      pts.push({ x: x0 + i * xStep })
-    }
-    energy /= FREQ_BINS
-
-    // 自动增益：把平均能量归一化到 0.35 附近，让波浪始终有动感（慢速跟随，防抽风）
-    gainEnv += (Math.min(2.2, Math.max(0.6, 0.35 / Math.max(energy, 0.08))) - gainEnv) * 0.05
-
-    // 贝斯上抬量（整条线随鼓点轻跳）+ 幅度微增；细条态去掉上抬
-    const lift = strip ? 0 : bassEnv * 5 * dpr
-    const ampBoost = 1 + bassEnv * 0.25
-    for (let i = 0; i < FREQ_BINS; i++) {
-      pts[i].y = baseY - smooth[i] * rise * gainEnv * ampBoost - lift
-      // 钳制在画布内：细条态 loud 时波浪顶到条上缘，不会溢出被裁成缝
-      pts[i].y = Math.max(dpr * 0.5, Math.min(h - dpr * 0.5, pts[i].y))
-    }
-
-    const rgb = waveColor()
-    const glow = Math.round(3 + energy * 12) // 紧凑光晕：不再大 blur + 尾迹叠出"蒙雾"
-
-    // 主线：accent 描边 + 紧凑光晕。去掉回波线与尾迹后，不再有"双影/蒙雾"的廉价感
-    ctx.save()
-    ctx.strokeStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`
-    ctx.lineWidth = 2 * dpr
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.9)`
-    ctx.shadowBlur = glow * dpr
-    tracePath(pts)
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  // 波浪开关（菜单窗口勾选 → 主进程回传）：关闭时停掉捕获流（省资源，也避免系统“正在录制”指示一直挂着）
-  function setWave(on) {
-    waveEnabled = !!on
-    localStorage.setItem('islandWave', waveEnabled ? '1' : '0')
-    islandEl.classList.toggle('wave-off', !waveEnabled)
-    if (waveEnabled) {
-      captureFailed = false
-      ensureAudioCapture()
-    } else {
-      stopAudioCapture()
-    }
-  }
-  islandEl.classList.toggle('wave-off', !waveEnabled)
-  window.island.onWave(setWave)
-
-  // 启动：先尝试捕获（可能需要用户手势，失败则首次点击时重试）
-  if (waveEnabled) ensureAudioCapture()
-  requestAnimationFrame(drawWave)
+  // 动效形态：订阅菜单切换 + 启动律动系统（绘制逻辑见 visualizer.js）
+  window.island.onStyle((s) => Visualizer.setStyle(s))
+  Visualizer.init({ islandEl, coverEl })
 })()

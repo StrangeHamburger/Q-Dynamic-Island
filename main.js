@@ -361,8 +361,9 @@ ipcMain.on('window:bgOpacity', (event, v) => {
 })
 
 // 波浪开关（菜单窗口勾选 → 回传岛窗口启停捕获流）
-ipcMain.on('window:wave', (event, v) => {
-  if (mainWindow) mainWindow.webContents.send('island:wave', !!v)
+// 动效形态切换（菜单窗口 → 回传岛窗口，岛窗口按形态启停捕获流 + 切换绘制器）
+ipcMain.on('window:style', (event, v) => {
+  if (mainWindow) mainWindow.webContents.send('island:style', String(v))
 })
 
 // 点击穿透：透明窗口区域不拦截鼠标（渲染进程按光标是否落在岛上动态切换；

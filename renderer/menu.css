@@ -20,11 +20,8 @@ html, body {
   width: 216px; /* 固定宽：range 滑块行的固有宽度会撑破菜单窗口，导致菜单被裁成一半 */
   padding: 6px;
   background: rgba(16, 16, 20, 0.97);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 12px;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
   color: #e8e8ea;
   font-size: 13px;
   user-select: none;
@@ -103,4 +100,38 @@ html, body {
 }
 .menu-danger {
   color: #ff6b6b;
+}
+/* 动效形态横排小方块：6 个图标按钮，选中高亮 */
+.style-grid {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 5px;
+  justify-content: flex-end;
+}
+.style-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: transparent;
+  color: #9aa0a8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.style-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.style-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.style-btn.active {
+  background: rgba(154, 160, 168, 0.2);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
 }
