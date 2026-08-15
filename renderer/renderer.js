@@ -6,8 +6,14 @@
   const coverImg = document.getElementById('coverImg')
   const islandEl = document.getElementById('island')
   const toggleEl = document.getElementById('toggle')
+  const infoEl = document.getElementById('info')
+  const progressFill = document.getElementById('progressFill')
+  const ringFg = document.getElementById('ringFg')
 
   let isPlaying = false // 播放状态，驱动律动形态状态机（播放→真 FFT，暂停→呼吸线）
+  let lastTitle = '' // 上一首标题，切歌时触发过渡动画
+  // 进度基准：position(秒) + 收到时间戳 + 时长 + 是否播放；前端本地插值让进度条平滑推进
+  let progressBase = { position: 0, at: Date.now(), duration: 0, playing: false }
 
   const btnPrev = document.getElementById('prev')
   const btnNext = document.getElementById('next')
@@ -18,18 +24,53 @@
     isPlaying = playing // 供乐观切换对账 + 驱动律动状态机
     Visualizer.setPlaying(playing)
     toggleEl.classList.toggle('playing', playing)
+    islandEl.classList.toggle('playing', playing) // 播放态样式：封面旋转等
 
     if (!state || !state.hasSession) {
       titleEl.textContent = '未播放'
       artistEl.textContent = '等待音乐…'
       setCover(null, null)
+      progressBase = { position: 0, at: Date.now(), duration: 0, playing: false }
       return
     }
 
-    titleEl.textContent = state.title || '未知曲目'
+    const newTitle = state.title || ''
+    // 切歌检测：标题变化 → 触发封面/文字过渡动画
+    if (newTitle && newTitle !== lastTitle) {
+      lastTitle = newTitle
+      coverEl.classList.remove('cover-switch')
+      infoEl.classList.remove('info-switch')
+      void coverEl.offsetWidth // 强制重排，让动画重新触发
+      coverEl.classList.add('cover-switch')
+      infoEl.classList.add('info-switch')
+    }
+
+    // 保存进度基准，前端本地插值平滑推进（1s 轮询靠插值补足中间帧）
+    if (typeof state.duration === 'number' && state.duration > 0) {
+      progressBase = { position: state.position || 0, at: Date.now(), duration: state.duration, playing }
+    }
+
+    titleEl.textContent = newTitle || '未知曲目'
     artistEl.textContent = state.artist || '未知歌手'
     setCover(state.cover, state.title)
   }
+
+  // 进度本地插值：播放中按流逝时间推进，暂停时停在基准位置（250ms 一次，平滑）
+  const RING_C = 119.38 // 进度环圆周长 2π×19
+  function updateProgress() {
+    const { position, at, duration, playing } = progressBase
+    if (!duration || duration <= 0) {
+      progressFill.style.width = '0%'
+      ringFg.style.strokeDashoffset = String(RING_C)
+      return
+    }
+    const p = playing ? position + (Date.now() - at) / 1000 : position
+    const ratio = Math.min(1, Math.max(0, p / duration))
+    progressFill.style.width = (ratio * 100).toFixed(2) + '%'
+    ringFg.style.strokeDashoffset = (RING_C * (1 - ratio)).toFixed(2)
+  }
+  setInterval(updateProgress, 250)
+  updateProgress()
 
   let lastCoverSrc = ''
 

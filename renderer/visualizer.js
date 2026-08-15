@@ -20,6 +20,7 @@
   let captureFailed = false
   let freqData = null
   const smooth = new Array(FREQ_BINS).fill(0.05)
+  let barSmooth = null // 柱状：每根柱子的缓动律动值（渐变过渡，随 n 懒初始化）
   let breatheTime = 0
   let bassEnv = 0 // 贝斯鼓点包络（快攻慢放）
   let gainEnv = 1 // 自动增益包络
@@ -205,42 +206,90 @@
     ctx.restore()
   }
 
-  // 柱状：密集胶囊形柱，左右对称（整体居中）+ 以中线上下一起延伸，整体缩放跳动明显
+  // 柱状（渐变能量柱）：正常态=纵向渐变发光柱（顶部高光点+底部渐隐），细条态=横向发光光点流
+  // 律动驱动 = 呼吸(均匀) + 频谱(个性) + 节拍(全局)，所有柱子/光点都明显随音乐动（保底 0.5 倍）
   function drawBars(w, h, dpr) {
     const st = waveState(w, h, dpr)
     const { vals } = spectrumValues(st.k, st.minV, st.maxV, st.breatheMix, st.breathe)
     const rgb = waveColor()
-    const strip = st.strip // 贴顶收拢成细条（h≈16px）
-    const midY = h * 0.5 // 水平中线：柱子上下对称
-    const maxHalf = h * (strip ? 0.15 : 0.32) // 每边最大半高（留边距，柱子最长不碰上下边缘）
-    const bw = 11 * dpr // 基准胶囊直径（粗细一致）
-    const gap = 5 * dpr // 柱间距（紧凑）
-    const n = Math.max(3, Math.floor((w + gap) / (bw + gap))) // 数量随岛宽自适应
+    const strip = st.strip
+    const midY = h * 0.5
+
+    // 数量/尺寸：正常态 9 根粗柱，细条态 9 颗光点（横向排布）
+    const n = 9
+    const bw = (strip ? 4 : 11) * dpr
+    const gap = strip ? 10 * dpr : Math.max(8 * dpr, (w - bw * n) / (n - 1))
     const totalW = n * bw + (n - 1) * gap
-    const startX = (w - totalW) / 2 // 整体居中，左右对称
-    const halfN = Math.ceil(n / 2) // 频谱采样取前半段，右半镜像左半 → 以中间柱子为中心左右对称
-    ctx.save()
-    ctx.lineCap = 'round'
-    ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.92)` // 所有柱子一样亮
+    const startX = (w - totalW) / 2 // 整体居中
+    const halfN = Math.ceil(n / 2)
+    const maxHalf = h * (strip ? 0.30 : 0.42)
+
+    // 缓动数组（渐变过渡）：每根柱子的律动值平滑趋近目标，不生硬跳变
+    if (!barSmooth || barSmooth.length !== n) barSmooth = new Array(n).fill(0.5)
+
     for (let i = 0; i < n; i++) {
-      // 镜像采样 + 反转：中间柱子取低频（值高→柱高），两边取高频（值低→柱矮）→ 中间高两边低
+      const t = n === 1 ? 0.5 : i / (n - 1)
+      // 平滑山峰曲线：中间 1、两边平滑递减到 0（连续渐变，非台阶）
+      const curve = Math.pow(Math.sin(t * Math.PI), 0.7)
+      // 频段采样（镜像）：中间低频、两边高频
       const mirror = Math.min(i, n - 1 - i)
       const idx = Math.min(FREQ_BINS - 1, Math.round((halfN - 1 - mirror) * (FREQ_BINS - 1) / Math.max(1, halfN - 1)))
-      // 非线性放大（平方根）：对音乐更敏感，小值也明显抬起来
-      const raw = vals[idx] * gainEnv
-      const v = Math.pow(Math.min(1, raw), 0.5)
-      const breatheLift = (strip ? 0.30 : 0.14) + (strip ? 0.18 : 0.10) * Math.sin(breatheTime * 0.03 + i * 0.55)
-      // 律动因子：柱子整体缩放（直径 + 长度同时变），0.5~1.0 倍 → 跳动明显
-      const s = 0.5 + 0.5 * Math.min(1, v + breatheLift * 0.6)
-      const half = maxHalf * s
-      ctx.lineWidth = bw * s // 直径随律动缩放，整体变大变小
+      // 目标律动值（频谱）+ 缓动过渡（0.1 系数，渐变平滑）
+      const target = Math.min(1, vals[idx] * gainEnv)
+      barSmooth[i] += (target - barSmooth[i]) * 0.1
+      // 呼吸：每根相位错开（仅暂停/静音时用，轻微起伏）
+      const breathe = 0.5 + 0.5 * Math.sin(breatheTime * 0.05 + i * 0.8)
+      // 节拍脉冲（全局）：所有柱子一起随节拍跳
+      const beat = normBeat
+      // 播放态：频谱+节拍主导（明显跟随音乐）；暂停态：极轻微呼吸（不一直大动）
+      const drive = playing ? Math.min(1, 0.75 * barSmooth[i] + 0.25 * beat) : 0.15 * breathe
+      // 高度 = 基础 + 律动 × 山峰曲线（中间满律动，两边按曲线平滑递减）
+      const scale = 0.3 + 0.7 * drive * (0.25 + 0.75 * curve)
       const x = startX + bw / 2 + i * (bw + gap)
-      ctx.beginPath()
-      ctx.moveTo(x, midY - half)
-      ctx.lineTo(x, midY + half)
-      ctx.stroke()
+
+      if (strip) {
+        // 细条态：横向发光光点（径向渐变光晕，随律动缩放亮度/大小）
+        const r = bw * scale
+        const g = ctx.createRadialGradient(x, midY, 0, x, midY, r * 2.2)
+        g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.9)`)
+        g.addColorStop(0.5, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.35)`)
+        g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.arc(x, midY, r * 2.2, 0, Math.PI * 2)
+        ctx.fill()
+      } else {
+        // 正常态：渐变能量柱
+        const half = maxHalf * scale
+        const yTop = midY - half
+        const yBot = midY + half
+        const lineW = bw * (0.7 + 0.3 * scale)
+        // 主体：纵向渐变（顶部亮 → 底部渐隐）
+        const grad = ctx.createLinearGradient(0, yTop, 0, yBot)
+        grad.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.95)`)
+        grad.addColorStop(0.55, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6)`)
+        grad.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.12)`)
+        ctx.save()
+        ctx.lineCap = 'round'
+        ctx.lineWidth = lineW
+        ctx.strokeStyle = grad
+        ctx.beginPath()
+        ctx.moveTo(x, yTop + lineW / 2)
+        ctx.lineTo(x, yBot - lineW / 2)
+        ctx.stroke()
+        ctx.restore()
+        // 顶部高光点：白色发光圆点（跟着柱子顶端起伏）
+        const dotR = lineW * 0.32
+        const dg = ctx.createRadialGradient(x, yTop, 0, x, yTop, dotR * 2.4)
+        dg.addColorStop(0, 'rgba(255,255,255,0.95)')
+        dg.addColorStop(0.5, 'rgba(255,255,255,0.35)')
+        dg.addColorStop(1, 'rgba(255,255,255,0)')
+        ctx.fillStyle = dg
+        ctx.beginPath()
+        ctx.arc(x, yTop, dotR * 2.4, 0, Math.PI * 2)
+        ctx.fill()
+      }
     }
-    ctx.restore()
   }
 
   // 涟漪：同心圆从封面中心向外扩散，更粗更慢更稀疏，随节拍加速
@@ -337,12 +386,16 @@
   // 主循环：清屏 → 按形态 dispatch。流畅感靠 smooth[] 指数平滑，不靠残影
   function draw() {
     requestAnimationFrame(draw)
-    if (style === 'none') return
     if (!ctx) return
-    updateShared()
     syncWaveSize()
     const w = waveW
     const h = waveH
+    if (style === 'none') {
+      // 关闭律动：清空 canvas，否则残留上一个形态的最后一帧静态画面（用户报「无=固定上一个静态动画」）
+      if (w >= 2 && h >= 2) ctx.clearRect(0, 0, w, h)
+      return
+    }
+    updateShared()
     if (w < 2 || h < 2) return
     const dpr = window.devicePixelRatio || 1
     ctx.clearRect(0, 0, w, h)

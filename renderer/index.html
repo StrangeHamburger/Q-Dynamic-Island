@@ -14,6 +14,11 @@
     <!-- 左侧：封面（P2 接 GSMTC 封面 / 在线封面 + 取色渐变） -->
     <div class="cover" id="cover">
       <img class="cover-img" id="coverImg" alt="" />
+      <!-- 封面外圈播放进度环 -->
+      <svg class="cover-ring" viewBox="0 0 40 40">
+        <circle class="ring-bg" cx="20" cy="20" r="19" />
+        <circle class="ring-fg" id="ringFg" cx="20" cy="20" r="19" />
+      </svg>
     </div>
 
     <!-- 中间：歌名 / 歌手 -->
@@ -34,6 +39,11 @@
       <button class="btn" id="next" title="下一首" aria-label="下一首">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2V6zM7.5 6l7 6-7 6V6z"/></svg>
       </button>
+    </div>
+
+    <!-- 底部播放进度条（收起时也显示，随进度推进） -->
+    <div class="progress" id="progress">
+      <div class="progress-fill" id="progressFill"></div>
     </div>
   </div>
 

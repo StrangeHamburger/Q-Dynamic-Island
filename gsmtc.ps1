@@ -57,6 +57,7 @@ function Get-State {
     if ($s) {
       $props = Await ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
       $pb = $s.GetPlaybackInfo()
+      $tl = $s.GetTimelineProperties()
       # 切歌时 Windows 的 GSMTC 缩略图「标题先更新、缩略图后更新」，个别播放器（汽水音乐等）
       # 甚至可能一直不更新缩略图 → 若按标题键无条件缓存旧图，新歌就永远顶着上一首的封面。
       # 策略：切歌的当轮读一次封面，若新歌缩略图字节与上一首完全一致 → 判为过期缩略图，
@@ -74,6 +75,8 @@ function Get-State {
         artist = [string]$props.Artist
         album  = [string]$props.AlbumTitle
         status = [string]$pb.PlaybackStatus
+        position = if ($tl) { [double]$tl.Position.TotalSeconds } else { 0 }
+        duration = if ($tl) { [double]($tl.EndTime - $tl.StartTime).TotalSeconds } else { 0 }
         source = [string]$s.SourceAppUserModelId
       }
       if ($script:thumbData) { $out.cover = $script:thumbData }

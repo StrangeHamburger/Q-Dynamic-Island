@@ -24,7 +24,8 @@ html, body {
   position: absolute;
   left: 0;   /* 锚定窗口左缘：收起/展开/菜单切换时封面与胶囊左缘都不漂移 */
   top: 0;
-  transform: none;
+  --anchor-x: 0%;          /* 锚定位移：贴左/贴右=0，居中=-50%（供呼吸动画合并，见 .island.playing） */
+  transform: translateX(var(--anchor-x));
 
   width: 280px;   /* 收起态尺寸 */
   height: 56px;
@@ -35,13 +36,10 @@ html, body {
   padding: 0 12px;
 
   background: rgba(20, 20, 24, var(--island-alpha));
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
 
   border-radius: 28px;   /* 高度一半 => 左右圆、上下平 */
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
     inset 0 0 0 1px rgba(var(--accent), 0.18);
 
   cursor: default;
@@ -49,9 +47,9 @@ html, body {
 
   /* 悬停放大：用宽高过渡（不用 scale，避免文字/封面模糊） */
   transition:
-    width 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    height 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    width 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* 线稿波浪画布：绝对铺满整岛、内容之下、不拦截任何指针事件 */
@@ -91,7 +89,7 @@ html, body {
   background: transparent;
   overflow: hidden;
   cursor: pointer;
-  transition: width 0.32s ease, height 0.32s ease;
+  transition: width 0.36s cubic-bezier(0.22, 1, 0.36, 1), height 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* 无封面兜底：柔和渐变 + 音符图标，不再空圈（在线封面搜不到的小众歌也显得完整） */
 .cover.no-cover {
@@ -128,6 +126,16 @@ html, body {
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
+  /* 文字遮罩：和岛背景同色的半透明渐变，柱子透过文字区变暗、文字清晰。
+     多段 stop 让两端平滑过渡（约 55% 宽度渐入渐出），不生硬 */
+  background: linear-gradient(90deg,
+    rgba(20, 20, 24, 0) 0%,
+    rgba(20, 20, 24, 0.14) 18%,
+    rgba(20, 20, 24, 0.42) 36%,
+    rgba(20, 20, 24, 0.5) 55%,
+    rgba(20, 20, 24, 0.42) 74%,
+    rgba(20, 20, 24, 0.14) 92%,
+    rgba(20, 20, 24, 0) 100%);
 }
 .title {
   font-size: 14px;
@@ -174,7 +182,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.14s ease, box-shadow 0.18s ease;
+  transition: background 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1), transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .btn svg {
   width: 15px;
@@ -208,7 +216,7 @@ html, body {
   margin: auto;
   width: 22px;
   height: 22px;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1), transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .btn-main:hover {
   background: linear-gradient(145deg, rgb(var(--accent)), rgb(var(--accent-deep)));
@@ -266,7 +274,8 @@ html, body {
 /* 贴中：岛在窗口内居中，悬停两边对称长（视觉中心不动） */
 .island.anchor-center {
   left: 50%;
-  transform: translateX(-50%);
+  --anchor-x: -50%;
+  transform: translateX(var(--anchor-x));
 }
 
 /* 贴顶收拢（边缘波浪）：岛收成沿上边缘的细条（280×16），只留发光线稿波浪。
@@ -373,9 +382,9 @@ body.docked .island.docked-idle:hover {
   height: 16px;
   border-radius: 0 0 8px 8px;
   transition:
-    width 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    height 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    width 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 body.docked .island.docked-idle .cover,
 body.docked .island.docked-idle .info,
@@ -431,11 +440,8 @@ body.menu-open .controls {
   width: 216px; /* 固定宽：range 滑块行的固有宽度会撑破菜单窗口，导致菜单被裁成一半 */
   padding: 6px;
   background: rgba(16, 16, 20, 0.97);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 12px;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
   color: #e8e8ea;
   font-size: 13px;
   user-select: none;
@@ -514,4 +520,118 @@ body.menu-open .controls {
 }
 .menu-danger {
   color: #ff6b6b;
+}
+
+/* ===== 播放进度（B）===== */
+/* 封面外圈播放进度环 */
+.cover-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 2;
+}
+.ring-fg {
+  fill: none;
+  stroke: rgba(var(--accent), 0.5);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 20px 20px;
+  stroke-dasharray: 119.38; /* 2π × 19 */
+  stroke-dashoffset: 119.38; /* 初始空，JS 按进度推进 */
+}
+
+/* 底部播放进度条 */
+.progress {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: rgba(var(--accent), 0.45);
+}
+
+/* ===== 切歌过渡动画（C）===== */
+/* 切歌时封面缩放淡入（renderer 检测到换歌后加 .cover-switch 再移除） */
+.cover.cover-switch {
+  animation: coverSwitch 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes coverSwitch {
+  0% { transform: scale(0.82); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.info.info-switch {
+  animation: infoSwitch 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes infoSwitch {
+  0% { transform: translateX(8px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+/* ===== 质感提升 ===== */
+/* 1. 氛围光：封面主色从封面位置向外扩散（Apple Music 沉浸感） */
+.island::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 18% 50%, rgba(var(--accent), 0.16), transparent 62%);
+  pointer-events: none;
+}
+
+/* 2. 材质感：顶部微高光（模拟玻璃边缘反光，不靠 backdrop-filter） */
+.island::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0) 42%);
+  pointer-events: none;
+}
+
+/* 3. 封面播放旋转（黑胶唱片感）：scale 放大防旋转露边 */
+.island.playing .cover-img {
+  animation: coverSpin 24s linear infinite;
+}
+@keyframes coverSpin {
+  from { transform: scale(1.15) rotate(0deg); }
+  to { transform: scale(1.15) rotate(360deg); }
+}
+
+/* ===== 质感提升 2 ===== */
+/* B. 按钮按压反馈：点击微缩回弹，真实「按下」触感 */
+.btn:active {
+  transform: scale(0.86);
+}
+.btn-main:active {
+  transform: scale(0.9);
+}
+
+/* C. 封面边缘柔光：封面色一圈微光晕（封面在岛内，overflow:hidden 裁剪，无模糊角风险） */
+.cover {
+  box-shadow: 0 0 12px rgba(var(--accent), 0.4);
+}
+
+/* D. 岛播放呼吸：播放时岛整体极轻微、极慢的缩放（1.2%，克制不晃眼）
+   ⚠️ transform 必须带上 translateX(var(--anchor-x))，否则会覆盖居中锚定的位移导致岛「向右闪」 */
+.island.playing {
+  animation: islandBreathe 5s ease-in-out infinite;
+}
+@keyframes islandBreathe {
+  0%, 100% { transform: translateX(var(--anchor-x)) scale(1); }
+  50% { transform: translateX(var(--anchor-x)) scale(1.012); }
 }
