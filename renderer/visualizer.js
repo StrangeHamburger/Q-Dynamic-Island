@@ -22,6 +22,8 @@
   let freqData = null
   const smooth = new Array(FREQ_BINS).fill(0.05)
   let barPhase = null // 柱状：每根柱子的随机相位（让跳动不整齐）
+  let barSmooth = null // 柱状：每根柱的独立平滑值（线性频带 + 各自峰值归一化）
+  let barPeak = null // 柱状：每根柱的近期峰值（慢衰减，用于归一化）
   let breatheTime = 0
   let bassEnv = 0 // 贝斯鼓点包络（快攻慢放）
   let gainEnv = 1 // 自动增益包络
@@ -102,6 +104,21 @@
       for (let i = 0; i < 3; i++) rgb[i] = Math.round(rgb[i] + (235 - rgb[i]) * t)
     }
     return rgb
+  }
+
+  // 圆角矩形填充（兼容旧 Electron 无 ctx.roundRect）
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath()
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r)
+    else {
+      ctx.moveTo(x + r, y)
+      ctx.arcTo(x + w, y, x + w, y + h, r)
+      ctx.arcTo(x + w, y + h, x, y + h, r)
+      ctx.arcTo(x, y + h, x, y, r)
+      ctx.arcTo(x, y, x + w, y, r)
+      ctx.closePath()
+    }
+    ctx.fill()
   }
 
   // 二次贝塞尔过中点平滑连线
@@ -207,46 +224,108 @@
     ctx.restore()
   }
 
-  // 柱状：9 根细柱，随频谱律动
+  // 柱状：9 根圆头胶囊等化器，居中左右对称（中间高、向两边递减），底部基线升起，
+  // 玻璃发光质感。贴顶收拢（细条）时变成小球珠链：整条铺满、中间大向两边依次缩小。
   function drawBars(w, h, dpr) {
     const st = waveState(w, h, dpr)
-    const { vals } = spectrumValues(st.k, st.minV, st.maxV, st.breatheMix, st.breathe)
     const rgb = waveColor()
-    const n = 9 // 9 根细柱
-    const barW = 6 * dpr // 细柱（放大 1.2 倍）
-    const gap = 4 * dpr // 紧凑间隔
-    const totalW = n * barW + (n - 1) * gap
-    const startX = st.strip ? (w - totalW) / 2 : (w - totalW - 12 * dpr) // 细条态居中，正常态右对齐（岛右边，文字之后）
-    const midY = h * 0.5 // 垂直居中：上下对称律动
-    const maxHalf = st.strip ? barW * 1.2 : h * 0.38 // 细条态小球（放大空间），正常态放大 1.2 倍
+    const n = 9
 
-    // 每根柱子随机相位（一次性初始化，让跳动不整齐）
+    // 每根柱子随机相位 + 独立平滑/峰值（一次性初始化，让跳动不整齐且各自归一化）
     if (!barPhase || barPhase.length !== n) barPhase = new Array(n).fill(0).map(() => Math.random() * Math.PI * 2)
+    if (!barSmooth || barSmooth.length !== n) barSmooth = new Array(n).fill(0.08)
+    if (!barPeak || barPeak.length !== n) barPeak = new Array(n).fill(0.08)
+
+    const center = (n - 1) / 2
+    const cBright = `rgb(${Math.min(255, Math.round(rgb[0] * 1.5))},${Math.min(255, Math.round(rgb[1] * 1.5))},${Math.min(255, Math.round(rgb[2] * 1.5))})`
+    const cMid = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`
+    const cDark = `rgb(${Math.round(rgb[0] * 0.4)},${Math.round(rgb[1] * 0.4)},${Math.round(rgb[2] * 0.4)})`
+
+    // 正常态几何：右对齐（贴岛右缘），圆头胶囊柱（radius = 柱宽/2 天然圆头）
+    const barW = 6 * dpr
+    const gap = 7 * dpr
+    const totalW = n * barW + (n - 1) * gap
+    const startX = w - totalW - 12 * dpr
+    const bottomY = h - Math.max(8 * dpr, h * 0.14)
+    const maxH = h * 0.52
+
+    // 细条态几何：居中成簇（不铺满整条、也不挤成一小团），圆点珠链（圆心同一水平线）
+    const stripStep = 16 * dpr
+    const stripStart = (w - stripStep * (n - 1)) / 2
+    const stripCy = h * 0.5
+    const stripMaxR = h * 0.34
 
     ctx.save()
     for (let i = 0; i < n; i++) {
-      // 均匀采样中频段（能量变化大→跳动明显），所有柱子都明显跳动，避免低频/高频的"几乎不动"
-      const idx = Math.min(FREQ_BINS - 1, 10 + Math.round(i * 35 / (n - 1)))
-      const v = Math.pow(Math.min(1, vals[idx] * gainEnv), 0.6)
-      // 呼吸：每根柱子独立随机相位 + 随机频率，跳动不整齐
-      const breatheLift = 0.10 + 0.08 * Math.sin(breatheTime * (0.018 + 0.02 * Math.abs(Math.sin(barPhase[i]))) + barPhase[i])
-      const half = st.strip
-        ? Math.max(barW * 0.3, (v + breatheLift) * maxHalf) // 细条态小球：随音乐明显放大缩小
-        : Math.max(barW, (v + breatheLift * 0.5) * maxHalf)
-      const x = startX + i * (barW + gap)
-      const yTop = midY - half
-      const yBot = midY + half
-      // 渐变：顶部亮 → 底部暗（亮度渐变，上亮下暗，对齐参考图）
-      const grad = ctx.createLinearGradient(0, yTop, 0, yBot)
-      grad.addColorStop(0, `rgb(${Math.min(255, Math.round(rgb[0] * 1.35))},${Math.min(255, Math.round(rgb[1] * 1.35))},${Math.min(255, Math.round(rgb[2] * 1.35))})`)
-      grad.addColorStop(1, `rgb(${Math.round(rgb[0] * 0.55)},${Math.round(rgb[1] * 0.55)},${Math.round(rgb[2] * 0.55)})`)
-      ctx.fillStyle = grad
-      if (ctx.roundRect) {
-        ctx.beginPath()
-        ctx.roundRect(x, yTop, barW, half * 2, barW / 2)
-        ctx.fill()
+      // 频带采样：低频~中高频（bin 1..48 ≈ 93Hz~4.5kHz，覆盖贝斯/人声/乐器主能量），
+      // 不取高频（>5kHz 只剩镲片/空气感，靠边几根会采不到能量、几乎不动）
+      const BAND_LO = 1
+      const BAND_HI = 48
+      const segStart = BAND_LO + Math.floor(i * (BAND_HI - BAND_LO) / n)
+      const segEnd = BAND_LO + Math.floor((i + 1) * (BAND_HI - BAND_LO) / n)
+
+      let v, breatheLift
+      if (analyser && freqData) {
+        let v0 = 0
+        for (let b = segStart; b < segEnd; b++) if (freqData[b] / 255 > v0) v0 = freqData[b] / 255
+        // 慢衰减峰值 + 各自归一化，让每根柱都在自己的幅度范围内明显跳动
+        barPeak[i] = Math.max(barPeak[i] * 0.99, v0)
+        const norm = v0 > 0.02 ? Math.min(1, v0 / Math.max(barPeak[i], 0.08)) : 0
+        barSmooth[i] += (norm - barSmooth[i]) * 0.35
+        v = barSmooth[i]
+        breatheLift = 0.06 + 0.05 * Math.sin(breatheTime * (0.02 + 0.02 * Math.abs(Math.sin(barPhase[i]))) + barPhase[i])
       } else {
-        ctx.fillRect(x, yTop, barW, half * 2)
+        v = 0.18
+        breatheLift = 0
+      }
+
+      // 左右对称山丘：中间 1 → 两边递减
+      const env = 1 - 0.35 * Math.pow(Math.abs(i - center) / center, 1.3)
+      const lift = (v + breatheLift * 0.4) * env
+
+      if (st.strip) {
+        // —— 小球珠链：居中成簇、圆心同一水平线，中间大向两边依次缩小 ——
+        const cx = stripStart + i * stripStep
+        const hill = 1 - 0.6 * Math.pow(Math.abs(i - center) / center, 1.2)
+        const r = Math.max(1.5 * dpr,
+          analyser && freqData
+            ? stripMaxR * hill * (0.45 + 0.55 * v) // 跳动：静止山丘上放大，振幅更大更明显
+            : stripMaxR * hill * 0.7)              // 静止：固定山丘，不跳
+        const cy = stripCy
+        // 质感：纯柔光球——上下自然渐变的实心主体（主色→深一点），无白芯无高光，
+        // 靠一层极淡的环境光晕融进岛背景，干净不抢眼
+        const cLo = `rgb(${Math.round(rgb[0] * 0.6)},${Math.round(rgb[1] * 0.6)},${Math.round(rgb[2] * 0.6)})`
+        ctx.save()
+        ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`
+        ctx.shadowBlur = r * 1.4
+        const g = ctx.createLinearGradient(0, cy - r, 0, cy + r)
+        g.addColorStop(0, cMid)
+        g.addColorStop(1, cLo)
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      } else {
+        // —— 圆头胶囊柱：居中铺开，底部基线升起 ——
+        const x = startX + i * (barW + gap)
+        const bh = Math.max(barW, lift * maxH)
+        const yTop = bottomY - bh
+        // 发光晕底
+        ctx.save()
+        ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5)`
+        ctx.shadowBlur = 8 * dpr
+        ctx.fillStyle = cMid
+        roundRect(x, yTop, barW, bh, barW / 2)
+        ctx.restore()
+        // 玻璃渐变主体：顶部白芯高光 → 主色 → 底部暗
+        const grad = ctx.createLinearGradient(0, yTop, 0, bottomY)
+        grad.addColorStop(0, `rgba(255,255,255,0.92)`)
+        grad.addColorStop(0.2, cBright)
+        grad.addColorStop(0.6, cMid)
+        grad.addColorStop(1, cDark)
+        ctx.fillStyle = grad
+        roundRect(x, yTop, barW, bh, barW / 2)
       }
     }
     ctx.restore()
