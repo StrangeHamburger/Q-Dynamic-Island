@@ -181,6 +181,7 @@ function createWindow() {
     skipTaskbar: true,
     hasShadow: false,
     fullscreenable: false,
+    icon: path.join(__dirname, 'icon.png'), // 任务栏/窗口图标（托盘同用此图）
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
