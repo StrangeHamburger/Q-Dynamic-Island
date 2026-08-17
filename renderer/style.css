@@ -20,10 +20,11 @@ html, body {
   --accent: 80, 84, 90;      /* 封面主色（r,g,b），由 JS 覆盖 */
   --accent-deep: 40, 42, 46; /* 主键渐变深色端，由 JS 覆盖 */
   --island-alpha: 0.92;      /* 岛背景不透明度（菜单滑块覆盖，越小越透） */
+  --glow-pad: 24px;          /* 岛四周透明余量（与 main.js GLOW_PAD 一致），给发光/阴影留出窗口内空间 */
 
   position: absolute;
-  left: 0;   /* 锚定窗口左缘：收起/展开/菜单切换时封面与胶囊左缘都不漂移 */
-  top: 0;
+  left: var(--glow-pad);   /* 锚定窗口左缘 + 余量：悬停放大时发光能超出岛本体、不贴窗口边被硬切 */
+  top: var(--glow-pad);
   --anchor-x: 0%;          /* 锚定位移：贴左/贴右=0，居中=-50%（供呼吸动画合并，见 .island.playing） */
   transform: translateX(var(--anchor-x));
 
@@ -43,7 +44,7 @@ html, body {
     inset 0 0 0 1px rgba(var(--accent), 0.18);
 
   cursor: default;
-  overflow: hidden;
+  overflow: visible; /* 不再裁剪子元素发光/阴影（封面光晕、按钮光晕），让它们溢出到四周余量里 */
 
   /* 悬停放大：用宽高过渡（不用 scale，避免文字/封面模糊） */
   transition:
@@ -58,6 +59,7 @@ html, body {
   inset: 0;
   width: 100%;
   height: 100%;
+  border-radius: inherit; /* 岛 overflow 改为 visible 后，画布自身按圆角裁剪，避免四角方角溢出 */
   pointer-events: none;
   opacity: 1;
   transition: opacity 0.3s ease;
@@ -260,7 +262,7 @@ html, body {
 /* 贴右：岛右缘贴窗口右缘，悬停向左长，贴屏幕右缘不溢出 */
 .island.anchor-right {
   left: auto;
-  right: 0;
+  right: var(--glow-pad);
 }
 /* 贴中：岛在窗口内居中，悬停两边对称长（视觉中心不动） */
 .island.anchor-center {
@@ -538,7 +540,18 @@ body.menu-open .controls {
   stroke-dashoffset: 119.38; /* 初始空，JS 按进度推进 */
 }
 
-/* 底部播放进度条 */
+/* 底部播放进度条。
+   岛 overflow 改成 visible（让封面/波浪发光能溢出岛外）后，进度条失去岛的圆角裁剪，
+   两端直角会伸到圆角外显得「变长」。给进度条套一个复刻岛圆角的裁剪容器
+   （border-radius:inherit + overflow:hidden），只裁这条 2px 条子，不挡 glow 溢出。
+   inherit 自动跟随岛各态圆角：收起 28 / 悬停 46 / 贴顶收拢 8，无需逐个写死。 */
+.progress-clip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
 .progress {
   position: absolute;
   left: 12px;
@@ -617,12 +630,13 @@ body.menu-open .controls {
   box-shadow: 0 0 12px rgba(var(--accent), 0.4);
 }
 
-/* D. 岛播放呼吸：播放时岛整体极轻微、极慢的缩放（1.2%，克制不晃眼）
+/* D. 岛播放呼吸：播放时岛整体极轻微、极慢的缩放（0.6%，克制不晃眼；
+   幅度压小避免悬停放大后岛贴满窗口、呼吸放大超出窗口被硬裁出刀切边）
    ⚠️ transform 必须带上 translateX(var(--anchor-x))，否则会覆盖居中锚定的位移导致岛「向右闪」 */
 .island.playing {
   animation: islandBreathe 5s ease-in-out infinite;
 }
 @keyframes islandBreathe {
   0%, 100% { transform: translateX(var(--anchor-x)) scale(1); }
-  50% { transform: translateX(var(--anchor-x)) scale(1.012); }
+  50% { transform: translateX(var(--anchor-x)) scale(1.006); }
 }

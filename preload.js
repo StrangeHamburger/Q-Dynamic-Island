@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('island', {
     ipcRenderer.on('island:forceCollapse', () => callback())
   },
 
+  // 订阅光标在窗口内的实时坐标（主进程 120ms 轮询回传，DIP 等同 client 坐标）：
+  // 穿透期间 mousemove 收不到，靠它纠偏点击穿透的命中判断
+  onCursor(callback) {
+    ipcRenderer.on('island:cursor', (event, pt) => callback(pt))
+  },
+
   // 发送音乐控制命令
   musicCommand(cmd) {
     ipcRenderer.send('music:command', cmd)

@@ -470,6 +470,23 @@
     }
   }
 
+  // 边缘柔化：画布是直角矩形，波/涟漪/流光的发光会在左右边缘被硬切成直线（刀切）。
+  // 播放时发光最亮、切痕最明显；用 destination-in 在左右两侧做水平淡出，让发光自然消隐。
+  function softEdges(w, h, dpr) {
+    const fade = Math.min(22 * dpr, w * 0.18)
+    if (fade <= 0 || w <= 0) return
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-in'
+    const g = ctx.createLinearGradient(0, 0, w, 0)
+    g.addColorStop(0, 'rgba(0,0,0,0)')
+    g.addColorStop(fade / w, 'rgba(0,0,0,1)')
+    g.addColorStop(1 - fade / w, 'rgba(0,0,0,1)')
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+    ctx.restore()
+  }
+
   // 主循环：清屏 → 按形态 dispatch。流畅感靠 smooth[] 指数平滑，不靠残影
   function draw() {
     requestAnimationFrame(draw)
@@ -488,9 +505,9 @@
     ctx.clearRect(0, 0, w, h)
     switch (style) {
       case 'bars': drawBars(w, h, dpr); break
-      case 'ripple': drawRipple(w, h, dpr); break
-      case 'sweep': drawSweep(w, h, dpr); break
-      default: drawWave(w, h, dpr)
+      case 'ripple': drawRipple(w, h, dpr); softEdges(w, h, dpr); break
+      case 'sweep': drawSweep(w, h, dpr); softEdges(w, h, dpr); break
+      default: drawWave(w, h, dpr); softEdges(w, h, dpr)
     }
   }
 

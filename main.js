@@ -5,10 +5,11 @@ const path = require('path')
 const { GsmtcBridge } = require('./music')
 const { getCover } = require('./cover')
 
-const SIZE = {
-  expanded: { width: 420, height: 92 }, // 窗口实际尺寸（放大态）
+const ISLAND = {
+  expanded: { width: 420, height: 92 }, // 岛屿放大态尺寸（悬停）
+  collapsed: { width: 280, height: 56 }, // 岛屿收起态尺寸
 }
-const COLLAPSED = { width: 280, height: 56 } // 岛收起态尺寸（窗口仍用 expanded，岛在窗口内）
+const GLOW_PAD = 24 // 岛四周透明余量（固定 DIP，不随缩放）：窗口比岛大一圈，让发光/阴影有空间渲染不被窗口硬切
 
 let mainWindow = null
 const music = new GsmtcBridge()
@@ -21,21 +22,35 @@ let islandScale = 1 // 岛屿缩放（0.67~1），由渲染进程设置
 let menuOpen = false // 自定义右键菜单是否展开（展开时窗口切成菜单尺寸）
 
 // --- 锚定模式：悬停放大纯由渲染进程 CSS 承担，窗口全程不移动 → 无跨进程动画，丝滑不卡顿 ---
-// 岛在窗口内三种锚法，决定悬停放大方向：
-//   left   left:0               → 向右长（窗口 x = 岛左缘）
-//   center left:50% 左移半宽    → 两边对称长（窗口 x = 岛中心 - 放大宽/2）
-//   right  right:0              → 向左长（窗口 x = 屏幕右缘 - 放大宽）
-// 窗口始终 expanded 尺寸（菜单态例外）；收起态 / 贴顶收拢态都是岛在窗口内的纯 CSS 形态
+// 岛在窗口内三种锚法（四周各留 GLOW_PAD 余量），决定悬停放大方向：
+//   left   left:pad             → 向右长（窗口 x = 岛左缘 - pad）
+//   center left:50% 左移半宽    → 两边对称长（窗口 x = 岛中心 - 窗口宽/2）
+//   right  right:pad            → 向左长（窗口 x = 屏幕右缘 - 窗口宽）
+// 窗口始终「放大态岛 + 四周余量」尺寸（菜单态例外）；收起态 / 贴顶收拢态都是岛在窗口内的纯 CSS 形态
 let anchorMode = 'center'
 let dockedTop = false // 岛已收拢到上边缘（细条波浪态；纯 CSS，窗口不缩尺寸）
 
-// 岛在窗口内的左缘偏移（收起岛左缘到窗口左缘的距离）：
-// 左锚 0；中锚 (放大宽-收起宽)/2（岛居中）；右锚 放大宽-收起宽（岛贴右）
+// 窗口几何：窗口 = 岛屿放大态 * 缩放 + 四周 GLOW_PAD 余量。岛嵌在窗口内、四周留透明余量，
+// 让 CSS 发光/阴影（封面、按钮）与画布律动发光能超出岛本体渲染，不被窗口硬切。
+function winSize() {
+  const pad = GLOW_PAD
+  return {
+    pad,
+    w: Math.round(ISLAND.expanded.width * islandScale) + pad * 2,
+    h: Math.round(ISLAND.expanded.height * islandScale) + pad * 2,
+    islandW: Math.round(ISLAND.expanded.width * islandScale),
+    islandH: Math.round(ISLAND.expanded.height * islandScale),
+    collapsedW: Math.round(ISLAND.collapsed.width * islandScale),
+    collapsedH: Math.round(ISLAND.collapsed.height * islandScale),
+  }
+}
+
+// 岛在窗口内的左缘偏移（岛左缘到窗口左缘的距离，含四周余量）：
+// 左锚 pad；中锚 pad+(放大宽-收起宽)/2（岛居中）；右锚 pad+放大宽-收起宽（岛贴右）
 function islandOffset() {
-  const expandedW = Math.round(SIZE.expanded.width * islandScale)
-  const collapsedW = Math.round(COLLAPSED.width * islandScale)
-  const half = Math.round((expandedW - collapsedW) / 2)
-  return anchorMode === 'right' ? half * 2 : anchorMode === 'center' ? half : 0
+  const s = winSize()
+  const half = Math.round((s.islandW - s.collapsedW) / 2)
+  return s.pad + (anchorMode === 'right' ? half * 2 : anchorMode === 'center' ? half : 0)
 }
 
 function setPinned(v) {
@@ -51,19 +66,18 @@ function setPinned(v) {
 // 开/关菜单不再有任何窗口 resize → 消除菜单关闭时的 OS 合成层闪烁
 function resizeWindow() {
   if (!mainWindow) return
-  const w = Math.round(SIZE.expanded.width * islandScale)
-  const h = Math.round(SIZE.expanded.height * islandScale)
+  const s = winSize()
   const b = mainWindow.getBounds()
   const wa = screen.getDisplayMatching(b).workArea
   // 缩放按锚点保持岛的位置：左锚保左缘、中锚保窗口中心（岛居中不动）、右锚保右缘。
   // 之前直接 clamp(b.x) 保留的是左缘——中锚时窗口宽度一变，岛就带着跳
   let x
-  if (anchorMode === 'right') x = b.x + b.width - w
-  else if (anchorMode === 'center') x = b.x + (b.width - w) / 2
+  if (anchorMode === 'right') x = b.x + b.width - s.w
+  else if (anchorMode === 'center') x = b.x + (b.width - s.w) / 2
   else x = b.x
-  x = Math.min(Math.max(x, wa.x), wa.x + wa.width - w)
-  const y = dockedTop ? wa.y : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)
-  mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h })
+  x = Math.min(Math.max(x, wa.x), wa.x + wa.width - s.w)
+  const y = dockedTop ? wa.y - s.pad : Math.min(Math.max(b.y, wa.y), wa.y + wa.height - s.h)
+  mainWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: s.w, height: s.h })
 }
 
 // --- 独立菜单窗口（透明、无边框、置顶、不进任务栏） ---
@@ -158,7 +172,8 @@ function createTray() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    ...SIZE.expanded,
+    width: ISLAND.expanded.width + GLOW_PAD * 2,
+    height: ISLAND.expanded.height + GLOW_PAD * 2,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -254,15 +269,18 @@ function startPolling() {
 
 // 光标离开窗口看门狗：点击穿透（setIgnoreMouseEvents）下浏览器收不到 mouseleave，
 // 岛的 :hover 会卡在展开态收不回来。主进程轮询光标位置，光标在窗口外时通知渲染进程兜底收拢。
+// 同时把光标在窗口内的坐标回传给渲染进程（DIP，等同 client 坐标），供点击穿透自纠偏——
+// 穿透期间 mousemove 会丢/滞后，导致命中判断卡旧态、悬停放大后左右残留透明墙。
 function startCursorWatchdog() {
   setInterval(() => {
     if (!mainWindow || menuOpen) return
     const b = mainWindow.getBounds()
     const c = screen.getCursorScreenPoint()
+    mainWindow.webContents.send('island:cursor', { x: c.x - b.x, y: c.y - b.y })
     if (c.x < b.x || c.y < b.y || c.x > b.x + b.width || c.y > b.y + b.height) {
       mainWindow.webContents.send('island:forceCollapse')
     }
-  }, 120)
+  }, 60)
 }
 
 // 渲染进程发来的控制命令
@@ -282,11 +300,13 @@ ipcMain.on('window:move', (event, pos) => {
   }
   const display = screen.getDisplayNearestPoint({ x: pos.x, y: pos.y })
   const wa = display.workArea
-  const w = Number.isFinite(pos.w) && pos.w > 0 ? pos.w : Math.round(COLLAPSED.width * islandScale)
-  const h = Number.isFinite(pos.h) && pos.h > 0 ? pos.h : Math.round(COLLAPSED.height * islandScale)
+  const s = winSize()
+  const w = Number.isFinite(pos.w) && pos.w > 0 ? pos.w : s.collapsedW
+  const h = Number.isFinite(pos.h) && pos.h > 0 ? pos.h : s.collapsedH
+  // pos.x/y 是窗口左上角屏幕坐标（渲染进程拖拽上报）；岛左缘 = 窗口x + islandOffset（含余量），岛顶 = 窗口y + pad
   const islandLeft = Math.min(Math.max(pos.x + islandOffset(), wa.x), wa.x + wa.width - w)
-  const y = Math.min(Math.max(pos.y, wa.y), wa.y + wa.height - h)
-  mainWindow.setPosition(Math.round(islandLeft - islandOffset()), Math.round(y))
+  const y = Math.min(Math.max(pos.y + s.pad, wa.y), wa.y + wa.height - h)
+  mainWindow.setPosition(Math.round(islandLeft - islandOffset()), Math.round(y - s.pad))
 })
 
 // 拖拽结束：定锚点（岛中心落在屏幕哪一段 → 哪种放大方向），并判断是否收拢到上边缘。
@@ -296,31 +316,30 @@ ipcMain.on('window:dragEnd', (event, pos) => {
   const b = mainWindow.getBounds()
   const wa = screen.getDisplayMatching(b).workArea
   const right = wa.x + wa.width
-  const expandedW = Math.round(SIZE.expanded.width * islandScale)
-  const expandedH = Math.round(SIZE.expanded.height * islandScale)
-  const collapsedW = Math.round(COLLAPSED.width * islandScale)
+  const s = winSize()
 
-  const docked = pos.y <= wa.y + 2
+  // 岛顶贴近屏幕上缘 → 收拢成边缘波浪（岛顶 = 窗口y + pad，故以窗口坐标换算）
+  const docked = pos.y + s.pad <= wa.y + 2
   dockedTop = docked
 
-  // 松手时岛左缘 = 窗口 x + 当前锚点偏移，据此算岛中心 → 定新锚点
+  // 松手时岛左缘 = 窗口 x + islandOffset（含余量 + 锚点），据此算岛中心 → 定新锚点
   const islandLeft = pos.x + islandOffset()
-  const islandCenter = islandLeft + collapsedW / 2
+  const islandCenter = islandLeft + s.collapsedW / 2
   let wx, next
-  if (islandCenter + expandedW / 2 > right - 2) {
+  if (islandCenter + s.islandW / 2 > right - s.pad) {
     next = 'right'
-    wx = right - expandedW // 窗口贴右，岛 right:0 放大向左
-  } else if (islandCenter - expandedW / 2 < wa.x + 2) {
+    wx = right - s.w // 窗口贴右，岛右缘距屏幕右缘留 pad，放大向左
+  } else if (islandCenter - s.islandW / 2 < wa.x + s.pad) {
     next = 'left'
-    wx = islandLeft // 窗口贴左，岛 left:0 放大向右
+    wx = islandLeft - s.pad // 窗口贴左（岛左缘 = 窗口x + pad），放大向右
   } else {
     next = 'center'
-    wx = islandCenter - expandedW / 2 // 岛居中，悬停两边对称长
+    wx = islandCenter - s.w / 2 // 岛居中，悬停两边对称长
   }
   anchorMode = next
-  wx = Math.min(Math.max(wx, wa.x), wa.x + wa.width - expandedW)
-  const wy = docked ? wa.y : Math.min(Math.max(pos.y, wa.y), wa.y + wa.height - expandedH)
-  mainWindow.setBounds({ x: Math.round(wx), y: Math.round(wy), width: expandedW, height: expandedH })
+  wx = Math.min(Math.max(wx, wa.x), wa.x + wa.width - s.w)
+  const wy = docked ? wa.y - s.pad : Math.min(Math.max(pos.y, wa.y), wa.y + wa.height - s.h)
+  mainWindow.setBounds({ x: Math.round(wx), y: Math.round(wy), width: s.w, height: s.h })
   mainWindow.webContents.send('island:docked', docked)
   mainWindow.webContents.send('island:anchorRight', next === 'right')
   mainWindow.webContents.send('island:anchorCenter', next === 'center')

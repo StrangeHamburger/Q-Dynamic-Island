@@ -41,9 +41,13 @@
       </button>
     </div>
 
-    <!-- 底部播放进度条（收起时也显示，随进度推进） -->
-    <div class="progress" id="progress">
-      <div class="progress-fill" id="progressFill"></div>
+    <!-- 底部播放进度条（收起时也显示，随进度推进）。
+         外层 .progress-clip 复刻岛圆角并 overflow:hidden，只裁这条 2px 条子，
+         岛本身 overflow:visible 的 glow 溢出不受影响 -->
+    <div class="progress-clip">
+      <div class="progress" id="progress">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
     </div>
   </div>
 

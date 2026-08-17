@@ -279,13 +279,14 @@
   // 收拢态（拖到上边缘的细条波浪）：切换 .docked 外观，波浪改为垂直居中。
   // 收拢后立即用最近一次光标位置校准 .docked-idle（拖拽结束光标可能停在岛外；
   // 停在岛内则悬停展开成普通岛，由 mousemove 实时校准）
+  // 收拢后立即用最近一次光标位置校准 .docked-idle（拖拽结束光标可能停在岛外；
+  // 停在岛内则悬停展开成普通岛，由 refreshInteractive 实时校准）
   let docked = false
   window.island.onDocked((d) => {
     docked = !!d
     document.body.classList.toggle('docked', docked)
     if (docked) {
-      const el = document.elementFromPoint(lastMouseX, lastMouseY)
-      setDockedIdle(!!el && islandEl.contains(el))
+      setDockedIdle(cursorIsOnIsland())
     } else {
       islandEl.classList.remove('docked-idle')
     }
@@ -372,30 +373,53 @@
 
   // --- 点击穿透：透明窗口区域不拦截鼠标（消除「虚拟墙」） ---
   // 光标在岛上 → 窗口接收鼠标；光标在透明区 → setIgnoreMouseEvents 穿透到桌面。
-  // forward:true 让穿透期间仍能收到 mousemove，据此判断光标何时回到岛上
+  // mousemove 快路径 + 主进程光标轮询兜底：穿透时 mousemove 会丢/滞后，命中判断会
+  // 卡在旧状态 → 悬停放大后左右残留透明墙。用主进程回传的真实光标坐标定时自纠。
   let interactive = true
-  let lastMouseX = 0
-  let lastMouseY = 0
+  let cursorX = -1
+  let cursorY = -1
   function setInteractive(v) {
     if (interactive === v) return
     interactive = v
     window.island.setInteractive(v)
   }
   // 贴顶收拢态维护 .docked-idle：真实光标在岛外 → 细条收起。
-  // 不依赖 :hover（点击穿透会冻结它），只依据每次 mousemove 的真实光标命中
+  // 不依赖 :hover（点击穿透会冻结它），只依据真实光标命中
   function setDockedIdle(onIsland) {
     if (!docked) { islandEl.classList.remove('docked-idle'); return }
     islandEl.classList.toggle('docked-idle', !onIsland)
   }
-  window.addEventListener('mousemove', (e) => {
-    lastMouseX = e.clientX
-    lastMouseY = e.clientY
-    if (dragging || menuOpen) return // 拖动/菜单展开中必须始终可交互
-    const el = document.elementFromPoint(e.clientX, e.clientY)
-    const onIsland = !!el && islandEl.contains(el)
+  // 纯几何命中（getBoundingClientRect），穿透态下也准确
+  function cursorIsOnIsland() {
+    if (cursorX < 0 || cursorY < 0) return false
+    const r = islandEl.getBoundingClientRect()
+    const inset = 2
+    return cursorX >= r.left + inset && cursorX <= r.right - inset &&
+           cursorY >= r.top + inset && cursorY <= r.bottom - inset
+  }
+  // 命中判断 + 交互态纠偏；拖动/菜单展开中锁定可交互，不做穿透。
+  // 用 getBoundingClientRect 做纯几何命中（elementFromPoint 在穿透态下会命中错误元素，
+  // 导致边界附近残留透明墙），并留 2px 内缩容差，避免边界抖动
+  function refreshInteractive() {
+    if (dragging || menuOpen) return
+    if (cursorX < 0 || cursorY < 0) return
+    const onIsland = cursorIsOnIsland()
     if (onIsland) islandEl.classList.remove('forced-collapse') // 光标回岛：解除兜底收拢，:hover 重新接管
     setDockedIdle(onIsland)
     setInteractive(onIsland)
+  }
+  window.addEventListener('mousemove', (e) => {
+    cursorX = e.clientX
+    cursorY = e.clientY
+    refreshInteractive()
+  })
+  // 主进程每 120ms 轮询光标回传真实坐标（穿透时浏览器收不到 mousemove，靠它纠偏）
+  window.island.onCursor((pt) => {
+    if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) {
+      cursorX = pt.x
+      cursorY = pt.y
+      refreshInteractive()
+    }
   })
   // 光标回到岛上（比如从别的应用切回）时确保可交互，并解除兜底收拢
   islandEl.addEventListener('pointerenter', () => {
