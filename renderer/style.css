@@ -128,19 +128,6 @@ html, body {
   overflow: hidden;
 }
 /* 文字遮罩已移除：柱状形态下柱子完整显示，文字区不再变暗 */
-/* ribbon 外观主题：岛背景纯黑（完全黑，去掉边框和内阴影，避免漏出灰色） */
-body.theme-ribbon .island {
-  background: #000;
-  border-color: transparent;
-  box-shadow: none;
-}
-/* ribbon 主题：隐藏所有内容元素，只留黑色背景 + 流动丝带 */
-body.theme-ribbon .cover,
-body.theme-ribbon .info,
-body.theme-ribbon .controls,
-body.theme-ribbon .progress {
-  display: none;
-}
 .title {
   font-size: 14px;
   font-weight: 600;

@@ -6,12 +6,6 @@
   if (!STYLES.includes(style)) style = 'wave'
   document.body.classList.toggle('style-bars', style === 'bars') // 文字遮罩仅柱状形态生效
 
-  // 外观主题（与律动独立）：default 默认 / ribbon 黑色背景 + 封面三色流动丝带
-  const THEMES = ['default', 'ribbon']
-  let theme = localStorage.getItem('islandTheme')
-  if (!THEMES.includes(theme)) theme = 'default'
-  document.body.classList.toggle('theme-ribbon', theme === 'ribbon')
-
   let islandEl = null
   let coverEl = null
   const canvas = document.getElementById('wave')
@@ -108,20 +102,6 @@
       for (let i = 0; i < 3; i++) rgb[i] = Math.round(rgb[i] + (235 - rgb[i]) * t)
     }
     return rgb
-  }
-
-  // 读封面提取的 3 色（--accent/--accent2/--accent3），供流动色带配色
-  function accentColors() {
-    const cs = getComputedStyle(islandEl)
-    const read = (name, fb) => {
-      const p = cs.getPropertyValue(name).trim()
-      const m = p.match(/\d+/g)
-      return m && m.length >= 3 ? m.slice(0, 3).map((s) => parseInt(s, 10) || 0) : fb
-    }
-    const c1 = read('--accent', [80, 84, 90])
-    const c2 = read('--accent2', c1)
-    const c3 = read('--accent3', c2)
-    return [c1, c2, c3]
   }
 
   // 二次贝塞尔过中点平滑连线
@@ -224,27 +204,6 @@
     ctx.shadowBlur = glow * dpr
     tracePath(pts)
     ctx.stroke()
-    ctx.restore()
-  }
-
-  // 流动色带：封面 3 色合起来，缓慢流动（原创替代「极光」——用封面色，非蓝紫）
-  function drawAurora(x, y, w, h) {
-    const colors = accentColors()
-    const flow = (breatheTime * 0.004) % 1 // 缓慢流动相位
-    ctx.save()
-    ctx.beginPath()
-    if (ctx.roundRect) ctx.roundRect(x, y, w, h, w / 2)
-    else ctx.rect(x, y, w, h)
-    ctx.clip() // 裁剪到圆角竖条
-    const gw = w * 3 // 渐变宽度 3 倍，平移实现流动
-    const off = flow * gw
-    const grad = ctx.createLinearGradient(x - off, 0, x - off + gw, 0)
-    const cols = [colors[0], colors[1], colors[2], colors[0]]
-    for (let i = 0; i < 4; i++) {
-      grad.addColorStop(i / 3, `rgba(${cols[i][0]},${cols[i][1]},${cols[i][2]},0.85)`)
-    }
-    ctx.fillStyle = grad
-    ctx.fillRect(x, y, w, h)
     ctx.restore()
   }
 
@@ -391,15 +350,9 @@
     syncWaveSize()
     const w = waveW
     const h = waveH
-    if (style === 'none' || theme === 'ribbon') {
-      // 无律动 或 ribbon 主题：只画纯黑背景，不画丝带、不画任何律动形态
-      if (w >= 2 && h >= 2) {
-        ctx.clearRect(0, 0, w, h)
-        if (theme === 'ribbon') {
-          ctx.fillStyle = '#000'
-          ctx.fillRect(0, 0, w, h)
-        }
-      }
+    if (style === 'none') {
+      // 关闭律动：清空 canvas，避免残留上一个形态的最后一帧静态画面（用户报「无=固定上一个静态动画」）
+      if (w >= 2 && h >= 2) ctx.clearRect(0, 0, w, h)
       return
     }
     updateShared()
@@ -430,13 +383,6 @@
       document.body.classList.toggle('style-bars', style === 'bars') // 遮罩仅柱状形态生效
       if (style === 'none') stopAudioCapture()
       else { captureFailed = false; ensureAudioCapture() }
-    },
-    setTheme(t) {
-      const next = THEMES.includes(t) ? t : 'default'
-      if (next === theme) return
-      theme = next
-      localStorage.setItem('islandTheme', theme)
-      document.body.classList.toggle('theme-ribbon', theme === 'ribbon')
     },
     setPlaying(p) {
       playing = !!p

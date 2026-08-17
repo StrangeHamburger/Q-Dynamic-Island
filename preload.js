@@ -69,11 +69,6 @@ contextBridge.exposeInMainWorld('island', {
     ipcRenderer.send('window:style', String(v))
   },
 
-  // 外观主题（菜单窗口 → 主进程 → 岛窗口）：default/ribbon
-  setTheme(t) {
-    ipcRenderer.send('window:theme', String(t))
-  },
-
   // 菜单窗口内容尺寸自适应上报
   setMenuSize(h) {
     ipcRenderer.send('menu:size', h)
@@ -98,11 +93,6 @@ contextBridge.exposeInMainWorld('island', {
   // 订阅动效形态回传
   onStyle(callback) {
     ipcRenderer.on('island:style', (event, v) => callback(String(v)))
-  },
-
-  // 订阅外观主题回传
-  onTheme(callback) {
-    ipcRenderer.on('island:theme', (event, v) => callback(String(v)))
   },
 
   // 订阅菜单开合状态（岛窗口据此在菜单期间保持可交互）

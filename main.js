@@ -366,11 +366,6 @@ ipcMain.on('window:style', (event, v) => {
   if (mainWindow) mainWindow.webContents.send('island:style', String(v))
 })
 
-// 外观主题（菜单窗口 → 岛窗口）：default/ribbon
-ipcMain.on('window:theme', (event, v) => {
-  if (mainWindow) mainWindow.webContents.send('island:theme', String(v))
-})
-
 // 点击穿透：透明窗口区域不拦截鼠标（渲染进程按光标是否落在岛上动态切换；
 // forward 让穿透期间仍能收到 mousemove，据此判断光标何时回到岛上）
 ipcMain.on('window:interactive', (event, v) => {
