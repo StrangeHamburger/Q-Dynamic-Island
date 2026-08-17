@@ -33,6 +33,10 @@
   let beatPeak = 0
   let normBeat = 0
 
+  // 涟漪脉冲：鼓点触发队列，每圈存 { t: 触发帧, s: 触发强度 }
+  let ripplePulses = []
+  let lastTriggerTime = 0
+
   let waveW = 0
   let waveH = 0
 
@@ -148,6 +152,13 @@
     const beat = Math.max(0, bassEnv - slowBass)
     beatPeak = Math.max(beatPeak * 0.95, beat)
     normBeat = beatPeak > 0.01 ? Math.min(1, beat / (beatPeak + 0.05)) : 0
+
+    // 鼓点触发涟漪：低频脉冲超过阈值 + 冷却时间，推入一圈新脉冲（不逐帧触发）
+    if (analyser && bassEnv > 0.05 && beat > Math.max(0.04, beatPeak * 0.45) && breatheTime - lastTriggerTime > 10) {
+      ripplePulses.push({ t: breatheTime, s: normBeat })
+      if (ripplePulses.length > 6) ripplePulses.shift()
+      lastTriggerTime = breatheTime
+    }
   }
 
   // 状态机：返回 { k, minV, maxV, breatheMix, breathe, strip }
@@ -331,7 +342,8 @@
     ctx.restore()
   }
 
-  // 涟漪：同心圆从封面中心向外扩散，更粗更慢更稀疏，随节拍加速
+  // 涟漪：鼓点触发的声波脉冲，从封面中心炸开、向外扩散并自然消隐。
+  // 环带用径向渐变（内虚→实→外虚），非描边，像水面能量波而非工程图
   function drawRipple(w, h, dpr) {
     const rgb = waveColor()
     const strip = document.body.classList.contains('docked') && islandEl.classList.contains('docked-idle')
@@ -344,29 +356,57 @@
       cx = (cr.left + cr.width / 2 - ir.left) * dpr
       cy = (cr.top + cr.height / 2 - ir.top) * dpr
     }
-    // 最大半径 = 中心到最远角的距离，涟漪最外圈正好扩散到岛边缘
+    // 最大半径 = 中心到最远角的距离，最外圈正好扩散到岛边缘
     const maxR = Math.max(
       Math.hypot(cx, cy),
       Math.hypot(cx - w, cy),
       Math.hypot(cx, cy - h),
       Math.hypot(cx - w, cy - h)
     )
-    const rings = 3
-    const speed = 0.012 + normBeat * 0.02 // 节拍激烈时扩散稍快，但上限防晃眼
-    for (let i = 0; i < rings; i++) {
-      const phase = (breatheTime * speed + i / rings) % 1
-      const r = phase * maxR // 从封面中心扩散到岛边缘
-      const a = (1 - phase * 0.55) * (0.4 + normBeat * 0.3) // 到边缘时仍可见
-      ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a.toFixed(3)})`
-      ctx.lineWidth = (2 + normBeat * 2) * dpr
+
+    // 清理已走完的脉冲；每圈生命周期 ~55 帧
+    const LIFETIME = 55
+    ripplePulses = ripplePulses.filter((p) => breatheTime - p.t < LIFETIME)
+
+    // 无音频（未播放）：只保留中心一点柔和呼吸光，不发脉冲
+    if (!analyser || !freqData) {
+      const breathe = 0.5 + 0.5 * Math.sin(breatheTime * 0.03)
+      const cr = Math.min(h * 0.3, (3 + breathe * 2) * dpr)
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr)
+      g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`)
+      g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
+      ctx.fillStyle = g
       ctx.beginPath()
-      ctx.arc(cx, cy, r, 0, Math.PI * 2)
-      ctx.stroke()
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2)
+      ctx.fill()
+      return
     }
-    // 中心光点：随节拍亮，带渐变光晕；细条态自动缩小不溢出
-    const cr = Math.min(h * 0.32, (4 + normBeat * 8) * dpr)
+
+    // 逐圈绘制：easeOut 扩散（先快后慢），半径从 0 → maxR，透明度随进度消隐
+    for (const p of ripplePulses) {
+      const progress = Math.min(1, (breatheTime - p.t) / LIFETIME)
+      const eased = 1 - Math.pow(1 - progress, 2.6) // easeOutQuart-ish
+      const R = eased * maxR
+      // 环带宽度随扩散略微变宽（真实声波前缘摊薄），中心态窄、边缘态宽
+      const bandW = (6 + 16 * eased) * dpr
+      const rIn = Math.max(0, R - bandW / 2)
+      const rOut = R + bandW / 2
+      const alpha = Math.pow(1 - progress, 1.4) * (0.5 + 0.5 * p.s)
+      if (rOut <= rIn || alpha <= 0.01) continue
+      const g = ctx.createRadialGradient(cx, cy, rIn, cx, cy, rOut)
+      g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
+      g.addColorStop(0.5, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`)
+      g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(cx, cy, rOut, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 中心光点：随节拍强度亮，脉冲时刻最亮（封面像被鼓点敲亮）
+    const cr = Math.min(h * 0.3, (4 + normBeat * 7) * dpr)
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr)
-    g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${(0.65 + normBeat * 0.35).toFixed(3)})`)
+    g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${(0.4 + normBeat * 0.5).toFixed(3)})`)
     g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
     ctx.fillStyle = g
     ctx.beginPath()
