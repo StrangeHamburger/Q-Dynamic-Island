@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>灵动岛主题</title>
+<style>
+  :root {
+    --bg: #f6f7f9;              /* 整体页面白色 */
+    --card: #ffffff;
+    --border: #e6e8ec;
+    --text: #1a1d24;
+    --text-sub: #8a909c;
+    --accent: #4f7cff;          /* 选中高亮 */
+    --shadow: 0 2px 12px rgba(20, 24, 40, 0.06);
+    --shadow-hover: 0 8px 24px rgba(20, 24, 40, 0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 桌面端容器：白色圆角面板居中，带轻微阴影 */
+  .app {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 32px 48px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 顶栏 */
+  .app-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .app-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .app-header .sub {
+    font-size: 14px;
+    color: var(--text-sub);
+  }
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0 28px;
+  }
+
+  /* 主题卡片网格 */
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+  }
+  .theme-card {
+    position: relative;
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    box-shadow: var(--shadow);
+    user-select: none;
+  }
+  .theme-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-hover);
+    border-color: #cdd3dd;
+  }
+  .theme-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.12), var(--shadow-hover);
+  }
+  /* 选中角标 */
+  .theme-card .check {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    line-height: 22px;
+    text-align: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .theme-card.active .check { opacity: 1; transform: scale(1); }
+
+  /* 迷你灵动岛缩略图（纯 CSS） */
+  .preview {
+    height: 76px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #eef1f5, #e3e7ee);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  /* 深色胶囊主题的缩略图 */
+  .mini-island {
+    width: 132px;
+    height: 28px;
+    border-radius: 14px;
+    background: rgba(20, 20, 24, 0.95);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 8px;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+  .mini-cover {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6aa0ff, #4f7cff);
+    flex: 0 0 auto;
+  }
+  .mini-info { flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; }
+  .mini-title { width: 70%; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.9); }
+  .mini-artist { width: 50%; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.4); }
+  /* 律动条纹 */
+  .mini-bars {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .mini-bars i {
+    display: block;
+    width: 3px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #7aa9ff, rgba(122,169,255,0.25));
+  }
+  /* 流动色带（流光夜主题的右边色带） */
+  .mini-aurora {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 20px;
+    border-radius: 4px;
+    margin-left: 4px;
+  }
+
+  .theme-card .name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .theme-card .desc {
+    font-size: 12.5px;
+    color: var(--text-sub);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  /* 预留占位卡 */
+  .theme-card.placeholder {
+    border: 2px dashed #cfd4dd;
+    background: transparent;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 150px;
+    color: var(--text-sub);
+  }
+  .theme-card.placeholder .plus {
+    font-size: 30px;
+    line-height: 1;
+    color: #b8bec9;
+    margin-bottom: 8px;
+  }
+  .theme-card.placeholder:hover { border-color: #a9b0bd; transform: none; box-shadow: none; }
+
+  /* 底部说明 */
+  .app-footer {
+    margin-top: auto;
+    padding-top: 28px;
+    font-size: 12.5px;
+    color: #b0b6c1;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>灵动岛主题</h1>
+      <span class="sub">选择你的灵动岛外观</span>
+    </header>
+    <div class="divider"></div>
+
+    <main class="theme-grid" id="themeGrid">
+      <!-- 主题卡片由 JS 从 THEMES 渲染，第一个默认选中 -->
+    </main>
+
+    <footer class="app-footer">主题 = 配色 + 胶囊外观 + 律动样式 + 字体，一套整体视觉包</footer>
+  </div>
+
+<script>
+  // ===== 主题数据：以后加主题只需往数组里 push 一个对象 =====
+  const THEMES = [
+    {
+      id: 'default',
+      name: '默认',
+      desc: '深色胶囊 · 封面主色律动 · 白字',
+      // 缩略图参数（纯 CSS 画迷你岛）
+      islandBg: 'rgba(20, 20, 24, 0.95)',
+      coverGrad: 'linear-gradient(135deg, #6aa0ff, #4f7cff)',
+      barGrad: 'linear-gradient(180deg, #7aa9ff, rgba(122,169,255,0.25))',
+      barHeights: [6, 12, 18, 10, 15, 8, 13, 7], // 律动条纹高度
+    },
+    {
+      id: 'night',
+      name: '流光夜',
+      desc: '黑色胶囊 · 三柱律动 · 封面三色流光',
+      islandBg: 'rgba(0, 0, 0, 0.95)',
+      coverGrad: 'linear-gradient(135deg, #6aa0ff, #4f7cff)',
+      barGrad: 'linear-gradient(180deg, #e8dcc0, rgba(216, 190, 150, 0.3))',
+      barHeights: [10, 18, 12], // 三个小柱状
+      auroraGrad: 'linear-gradient(180deg, #e8dcc0, #786048, #483018)', // 右边流动色带（封面三色合起来）
+    },
+    // 以后加新主题：
+    // { id: 'light', name: '浅色', desc: '...', ... },
+  ];
+
+  const grid = document.getElementById('themeGrid');
+
+  function renderTheme(t, active) {
+    const card = document.createElement('div');
+    card.className = 'theme-card' + (active ? ' active' : '');
+    card.dataset.id = t.id;
+
+    // 迷你岛缩略图
+    const barsHtml = t.barHeights.map(h =>
+      `<i style="height:${h}px; background:${t.barGrad}"></i>`
+    ).join('');
+    const auroraHtml = t.auroraGrad
+      ? `<div class="mini-aurora" style="background:${t.auroraGrad}"></div>`
+      : '';
+
+    card.innerHTML = `
+      <div class="check">✓</div>
+      <div class="preview">
+        <div class="mini-island" style="background:${t.islandBg}">
+          <div class="mini-cover" style="background:${t.coverGrad}"></div>
+          <div class="mini-info">
+            <div class="mini-title"></div>
+            <div class="mini-artist"></div>
+          </div>
+          <div class="mini-bars">${barsHtml}</div>
+          ${auroraHtml}
+        </div>
+      </div>
+      <div class="name">${t.name}</div>
+      <div class="desc">${t.desc}</div>
+    `;
+
+    card.addEventListener('click', () => selectTheme(t.id));
+    return card;
+  }
+
+  function selectTheme(id) {
+    document.querySelectorAll('.theme-card[data-id]').forEach(c =>
+      c.classList.toggle('active', c.dataset.id === id));
+    console.log('选中主题:', id);
+  }
+
+  // 渲染所有主题，第一个默认选中
+  THEMES.forEach((t, i) => grid.appendChild(renderTheme(t, i === 0)));
+
+  // 预留占位卡（以后加主题的入口）
+  const ph = document.createElement('div');
+  ph.className = 'theme-card placeholder';
+  ph.innerHTML = '<div class="plus">+</div><div class="name">更多主题</div><div class="desc">敬请期待</div>';
+  grid.appendChild(ph);
+</script>
+</body>
+</html>

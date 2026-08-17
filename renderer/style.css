@@ -126,16 +126,20 @@ html, body {
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
-  /* 文字遮罩：和岛背景同色的半透明渐变，柱子透过文字区变暗、文字清晰。
-     多段 stop 让两端平滑过渡（约 55% 宽度渐入渐出），不生硬 */
-  background: linear-gradient(90deg,
-    rgba(20, 20, 24, 0) 0%,
-    rgba(20, 20, 24, 0.14) 18%,
-    rgba(20, 20, 24, 0.42) 36%,
-    rgba(20, 20, 24, 0.5) 55%,
-    rgba(20, 20, 24, 0.42) 74%,
-    rgba(20, 20, 24, 0.14) 92%,
-    rgba(20, 20, 24, 0) 100%);
+}
+/* 文字遮罩已移除：柱状形态下柱子完整显示，文字区不再变暗 */
+/* ribbon 外观主题：岛背景纯黑（完全黑，去掉边框和内阴影，避免漏出灰色） */
+body.theme-ribbon .island {
+  background: #000;
+  border-color: transparent;
+  box-shadow: none;
+}
+/* ribbon 主题：隐藏所有内容元素，只留黑色背景 + 流动丝带 */
+body.theme-ribbon .cover,
+body.theme-ribbon .info,
+body.theme-ribbon .controls,
+body.theme-ribbon .progress {
+  display: none;
 }
 .title {
   font-size: 14px;

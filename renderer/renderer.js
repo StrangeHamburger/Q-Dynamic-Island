@@ -448,5 +448,7 @@
   window.island.onBgOpacity((v) => applyBgOpacity(v))
   // 动效形态：订阅菜单切换 + 启动律动系统（绘制逻辑见 visualizer.js）
   window.island.onStyle((s) => Visualizer.setStyle(s))
+  // 外观主题：订阅菜单切换
+  window.island.onTheme((t) => Visualizer.setTheme(t))
   Visualizer.init({ islandEl, coverEl })
 })()

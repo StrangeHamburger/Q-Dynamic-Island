@@ -3,6 +3,7 @@
 (function () {
   const pinCheck = document.getElementById('pinCheck')
   const styleBtns = document.querySelectorAll('#styleGrid .style-btn')
+  const themeBtns = document.querySelectorAll('#themeGrid .style-btn')
   const scaleSlider = document.getElementById('scaleSlider')
   const scaleValue = document.getElementById('scaleValue')
   const bgOpacitySlider = document.getElementById('bgOpacitySlider')
@@ -18,9 +19,13 @@
   const STYLES = ['none', 'wave', 'bars', 'ripple', 'sweep']
   let style = localStorage.getItem('islandStyle')
   if (!STYLES.includes(style)) style = 'wave'
+  const THEMES = ['default', 'ribbon']
+  let theme = localStorage.getItem('islandTheme')
+  if (!THEMES.includes(theme)) theme = 'default'
 
   pinCheck.checked = false // 固定状态由主进程下发（island:pinned）
   applyStyleBtn(style)
+  applyThemeBtn(theme)
   scaleSlider.value = String(scale)
   scaleValue.textContent = Math.round(scale * 100) + '%'
   bgOpacitySlider.value = String(bgOpacity)
@@ -35,12 +40,28 @@
     styleBtns.forEach((b) => b.classList.toggle('active', b.dataset.style === s))
   }
 
+  function applyThemeBtn(t) {
+    themeBtns.forEach((b) => b.classList.toggle('active', b.dataset.theme === t))
+    // ribbon 主题：律动不适用，隐藏「律动」栏目；default：恢复显示
+    const styleRow = document.getElementById('styleRow')
+    if (styleRow) styleRow.style.display = t === 'ribbon' ? 'none' : ''
+  }
+
   styleBtns.forEach((b) => {
     b.addEventListener('click', () => {
       const s = b.dataset.style
       localStorage.setItem('islandStyle', s)
       applyStyleBtn(s)
       window.island.setStyle(s)
+    })
+  })
+
+  themeBtns.forEach((b) => {
+    b.addEventListener('click', () => {
+      const t = b.dataset.theme
+      localStorage.setItem('islandTheme', t)
+      applyThemeBtn(t)
+      window.island.setTheme(t)
     })
   })
 

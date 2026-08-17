@@ -4,6 +4,13 @@
   const STYLES = ['none', 'wave', 'bars', 'ripple', 'sweep']
   let style = localStorage.getItem('islandStyle')
   if (!STYLES.includes(style)) style = 'wave'
+  document.body.classList.toggle('style-bars', style === 'bars') // 文字遮罩仅柱状形态生效
+
+  // 外观主题（与律动独立）：default 默认 / ribbon 黑色背景 + 封面三色流动丝带
+  const THEMES = ['default', 'ribbon']
+  let theme = localStorage.getItem('islandTheme')
+  if (!THEMES.includes(theme)) theme = 'default'
+  document.body.classList.toggle('theme-ribbon', theme === 'ribbon')
 
   let islandEl = null
   let coverEl = null
@@ -20,7 +27,7 @@
   let captureFailed = false
   let freqData = null
   const smooth = new Array(FREQ_BINS).fill(0.05)
-  let barSmooth = null // 柱状：每根柱子的缓动律动值（渐变过渡，随 n 懒初始化）
+  let barPhase = null // 柱状：每根柱子的随机相位（让跳动不整齐）
   let breatheTime = 0
   let bassEnv = 0 // 贝斯鼓点包络（快攻慢放）
   let gainEnv = 1 // 自动增益包络
@@ -101,6 +108,20 @@
       for (let i = 0; i < 3; i++) rgb[i] = Math.round(rgb[i] + (235 - rgb[i]) * t)
     }
     return rgb
+  }
+
+  // 读封面提取的 3 色（--accent/--accent2/--accent3），供流动色带配色
+  function accentColors() {
+    const cs = getComputedStyle(islandEl)
+    const read = (name, fb) => {
+      const p = cs.getPropertyValue(name).trim()
+      const m = p.match(/\d+/g)
+      return m && m.length >= 3 ? m.slice(0, 3).map((s) => parseInt(s, 10) || 0) : fb
+    }
+    const c1 = read('--accent', [80, 84, 90])
+    const c2 = read('--accent2', c1)
+    const c3 = read('--accent3', c2)
+    return [c1, c2, c3]
   }
 
   // 二次贝塞尔过中点平滑连线
@@ -206,90 +227,70 @@
     ctx.restore()
   }
 
-  // 柱状（渐变能量柱）：正常态=纵向渐变发光柱（顶部高光点+底部渐隐），细条态=横向发光光点流
-  // 律动驱动 = 呼吸(均匀) + 频谱(个性) + 节拍(全局)，所有柱子/光点都明显随音乐动（保底 0.5 倍）
+  // 流动色带：封面 3 色合起来，缓慢流动（原创替代「极光」——用封面色，非蓝紫）
+  function drawAurora(x, y, w, h) {
+    const colors = accentColors()
+    const flow = (breatheTime * 0.004) % 1 // 缓慢流动相位
+    ctx.save()
+    ctx.beginPath()
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, w / 2)
+    else ctx.rect(x, y, w, h)
+    ctx.clip() // 裁剪到圆角竖条
+    const gw = w * 3 // 渐变宽度 3 倍，平移实现流动
+    const off = flow * gw
+    const grad = ctx.createLinearGradient(x - off, 0, x - off + gw, 0)
+    const cols = [colors[0], colors[1], colors[2], colors[0]]
+    for (let i = 0; i < 4; i++) {
+      grad.addColorStop(i / 3, `rgba(${cols[i][0]},${cols[i][1]},${cols[i][2]},0.85)`)
+    }
+    ctx.fillStyle = grad
+    ctx.fillRect(x, y, w, h)
+    ctx.restore()
+  }
+
+  // 柱状：9 根细柱，随频谱律动
   function drawBars(w, h, dpr) {
     const st = waveState(w, h, dpr)
     const { vals } = spectrumValues(st.k, st.minV, st.maxV, st.breatheMix, st.breathe)
     const rgb = waveColor()
-    const strip = st.strip
-    const midY = h * 0.5
+    const n = 9 // 9 根细柱
+    const barW = 6 * dpr // 细柱（放大 1.2 倍）
+    const gap = 4 * dpr // 紧凑间隔
+    const totalW = n * barW + (n - 1) * gap
+    const startX = st.strip ? (w - totalW) / 2 : (w - totalW - 12 * dpr) // 细条态居中，正常态右对齐（岛右边，文字之后）
+    const midY = h * 0.5 // 垂直居中：上下对称律动
+    const maxHalf = st.strip ? barW * 1.2 : h * 0.38 // 细条态小球（放大空间），正常态放大 1.2 倍
 
-    // 数量/尺寸：正常态 9 根粗柱，细条态 9 颗光点（横向排布）
-    const n = 9
-    const bw = (strip ? 4 : 11) * dpr
-    const gap = strip ? 10 * dpr : Math.max(8 * dpr, (w - bw * n) / (n - 1))
-    const totalW = n * bw + (n - 1) * gap
-    const startX = (w - totalW) / 2 // 整体居中
-    const halfN = Math.ceil(n / 2)
-    const maxHalf = h * (strip ? 0.30 : 0.42)
+    // 每根柱子随机相位（一次性初始化，让跳动不整齐）
+    if (!barPhase || barPhase.length !== n) barPhase = new Array(n).fill(0).map(() => Math.random() * Math.PI * 2)
 
-    // 缓动数组（渐变过渡）：每根柱子的律动值平滑趋近目标，不生硬跳变
-    if (!barSmooth || barSmooth.length !== n) barSmooth = new Array(n).fill(0.5)
-
+    ctx.save()
     for (let i = 0; i < n; i++) {
-      const t = n === 1 ? 0.5 : i / (n - 1)
-      // 平滑山峰曲线：中间 1、两边平滑递减到 0（连续渐变，非台阶）
-      const curve = Math.pow(Math.sin(t * Math.PI), 0.7)
-      // 频段采样（镜像）：中间低频、两边高频
-      const mirror = Math.min(i, n - 1 - i)
-      const idx = Math.min(FREQ_BINS - 1, Math.round((halfN - 1 - mirror) * (FREQ_BINS - 1) / Math.max(1, halfN - 1)))
-      // 目标律动值（频谱）+ 缓动过渡（0.1 系数，渐变平滑）
-      const target = Math.min(1, vals[idx] * gainEnv)
-      barSmooth[i] += (target - barSmooth[i]) * 0.1
-      // 呼吸：每根相位错开（仅暂停/静音时用，轻微起伏）
-      const breathe = 0.5 + 0.5 * Math.sin(breatheTime * 0.05 + i * 0.8)
-      // 节拍脉冲（全局）：所有柱子一起随节拍跳
-      const beat = normBeat
-      // 播放态：频谱+节拍主导（明显跟随音乐）；暂停态：极轻微呼吸（不一直大动）
-      const drive = playing ? Math.min(1, 0.75 * barSmooth[i] + 0.25 * beat) : 0.15 * breathe
-      // 高度 = 基础 + 律动 × 山峰曲线（中间满律动，两边按曲线平滑递减）
-      const scale = 0.3 + 0.7 * drive * (0.25 + 0.75 * curve)
-      const x = startX + bw / 2 + i * (bw + gap)
-
-      if (strip) {
-        // 细条态：横向发光光点（径向渐变光晕，随律动缩放亮度/大小）
-        const r = bw * scale
-        const g = ctx.createRadialGradient(x, midY, 0, x, midY, r * 2.2)
-        g.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.9)`)
-        g.addColorStop(0.5, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.35)`)
-        g.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
-        ctx.fillStyle = g
+      // 均匀采样中频段（能量变化大→跳动明显），所有柱子都明显跳动，避免低频/高频的"几乎不动"
+      const idx = Math.min(FREQ_BINS - 1, 10 + Math.round(i * 35 / (n - 1)))
+      const v = Math.pow(Math.min(1, vals[idx] * gainEnv), 0.6)
+      // 呼吸：每根柱子独立随机相位 + 随机频率，跳动不整齐
+      const breatheLift = 0.10 + 0.08 * Math.sin(breatheTime * (0.018 + 0.02 * Math.abs(Math.sin(barPhase[i]))) + barPhase[i])
+      const half = st.strip
+        ? Math.max(barW * 0.3, (v + breatheLift) * maxHalf) // 细条态小球：随音乐明显放大缩小
+        : Math.max(barW, (v + breatheLift * 0.5) * maxHalf)
+      const x = startX + i * (barW + gap)
+      const yTop = midY - half
+      const yBot = midY + half
+      // 渐变：顶部亮 → 底部暗（亮度渐变，上亮下暗，对齐参考图）
+      const grad = ctx.createLinearGradient(0, yTop, 0, yBot)
+      grad.addColorStop(0, `rgb(${Math.min(255, Math.round(rgb[0] * 1.35))},${Math.min(255, Math.round(rgb[1] * 1.35))},${Math.min(255, Math.round(rgb[2] * 1.35))})`)
+      grad.addColorStop(1, `rgb(${Math.round(rgb[0] * 0.55)},${Math.round(rgb[1] * 0.55)},${Math.round(rgb[2] * 0.55)})`)
+      ctx.fillStyle = grad
+      if (ctx.roundRect) {
         ctx.beginPath()
-        ctx.arc(x, midY, r * 2.2, 0, Math.PI * 2)
+        ctx.roundRect(x, yTop, barW, half * 2, barW / 2)
         ctx.fill()
       } else {
-        // 正常态：渐变能量柱
-        const half = maxHalf * scale
-        const yTop = midY - half
-        const yBot = midY + half
-        const lineW = bw * (0.7 + 0.3 * scale)
-        // 主体：纵向渐变（顶部亮 → 底部渐隐）
-        const grad = ctx.createLinearGradient(0, yTop, 0, yBot)
-        grad.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.95)`)
-        grad.addColorStop(0.55, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6)`)
-        grad.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.12)`)
-        ctx.save()
-        ctx.lineCap = 'round'
-        ctx.lineWidth = lineW
-        ctx.strokeStyle = grad
-        ctx.beginPath()
-        ctx.moveTo(x, yTop + lineW / 2)
-        ctx.lineTo(x, yBot - lineW / 2)
-        ctx.stroke()
-        ctx.restore()
-        // 顶部高光点：白色发光圆点（跟着柱子顶端起伏）
-        const dotR = lineW * 0.32
-        const dg = ctx.createRadialGradient(x, yTop, 0, x, yTop, dotR * 2.4)
-        dg.addColorStop(0, 'rgba(255,255,255,0.95)')
-        dg.addColorStop(0.5, 'rgba(255,255,255,0.35)')
-        dg.addColorStop(1, 'rgba(255,255,255,0)')
-        ctx.fillStyle = dg
-        ctx.beginPath()
-        ctx.arc(x, yTop, dotR * 2.4, 0, Math.PI * 2)
-        ctx.fill()
+        ctx.fillRect(x, yTop, barW, half * 2)
       }
     }
+    ctx.restore()
   }
 
   // 涟漪：同心圆从封面中心向外扩散，更粗更慢更稀疏，随节拍加速
@@ -390,9 +391,15 @@
     syncWaveSize()
     const w = waveW
     const h = waveH
-    if (style === 'none') {
-      // 关闭律动：清空 canvas，否则残留上一个形态的最后一帧静态画面（用户报「无=固定上一个静态动画」）
-      if (w >= 2 && h >= 2) ctx.clearRect(0, 0, w, h)
+    if (style === 'none' || theme === 'ribbon') {
+      // 无律动 或 ribbon 主题：只画纯黑背景，不画丝带、不画任何律动形态
+      if (w >= 2 && h >= 2) {
+        ctx.clearRect(0, 0, w, h)
+        if (theme === 'ribbon') {
+          ctx.fillStyle = '#000'
+          ctx.fillRect(0, 0, w, h)
+        }
+      }
       return
     }
     updateShared()
@@ -420,8 +427,16 @@
       if (next === style) return
       style = next
       localStorage.setItem('islandStyle', style)
+      document.body.classList.toggle('style-bars', style === 'bars') // 遮罩仅柱状形态生效
       if (style === 'none') stopAudioCapture()
       else { captureFailed = false; ensureAudioCapture() }
+    },
+    setTheme(t) {
+      const next = THEMES.includes(t) ? t : 'default'
+      if (next === theme) return
+      theme = next
+      localStorage.setItem('islandTheme', theme)
+      document.body.classList.toggle('theme-ribbon', theme === 'ribbon')
     },
     setPlaying(p) {
       playing = !!p
