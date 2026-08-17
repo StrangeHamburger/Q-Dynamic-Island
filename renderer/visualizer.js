@@ -303,20 +303,28 @@
             ? stripMaxR * hill * (0.45 + 0.55 * v) // 跳动：静止山丘上放大，振幅更大更明显
             : stripMaxR * hill * 0.7)              // 静止：固定山丘，不跳
         const cy = stripCy
-        // 质感：纯柔光球——上下自然渐变的实心主体（主色→深一点），无白芯无高光，
-        // 靠一层极淡的环境光晕融进岛背景，干净不抢眼
-        const cLo = `rgb(${Math.round(rgb[0] * 0.6)},${Math.round(rgb[1] * 0.6)},${Math.round(rgb[2] * 0.6)})`
-        ctx.save()
-        ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`
-        ctx.shadowBlur = r * 1.4
-        const g = ctx.createLinearGradient(0, cy - r, 0, cy + r)
-        g.addColorStop(0, cMid)
-        g.addColorStop(1, cLo)
-        ctx.fillStyle = g
+        // 质感：发光光珠——先铺一层柔光晕（halo）营造「亮」的氛围，核心是亮的
+        // 主色珠（中心微提亮 → 边缘主色）。不做白斑、不做高光弧、不压暗底部，
+        // 避开「塑料糖」的白芯和「灰暗扁片」两个极端
+        const haloR = r * 2.2
+        const halo = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, haloR)
+        halo.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.34)`)
+        halo.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`)
+        ctx.fillStyle = halo
+        ctx.beginPath()
+        ctx.arc(cx, cy, haloR, 0, Math.PI * 2)
+        ctx.fill()
+        // 核心：中心微亮 → 边缘主色（不再压暗到底，让珠保持发光感）
+        const cHi = `rgb(${Math.round(rgb[0] + (255 - rgb[0]) * 0.42)},${Math.round(rgb[1] + (255 - rgb[1]) * 0.42)},${Math.round(rgb[2] + (255 - rgb[2]) * 0.42)})`
+        const cEdge = `rgb(${Math.round(rgb[0] * 0.88)},${Math.round(rgb[1] * 0.88)},${Math.round(rgb[2] * 0.88)})`
+        const cCore = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r)
+        cCore.addColorStop(0, cHi)
+        cCore.addColorStop(0.6, cMid)
+        cCore.addColorStop(1, cEdge)
+        ctx.fillStyle = cCore
         ctx.beginPath()
         ctx.arc(cx, cy, r, 0, Math.PI * 2)
         ctx.fill()
-        ctx.restore()
       } else {
         // —— 圆头胶囊柱：居中铺开，底部基线升起 ——
         const x = startX + i * (barW + gap)
