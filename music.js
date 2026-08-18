@@ -2,6 +2,7 @@
 // 行协议：写入一行命令(get/play/pause/next/prev/toggle)，读回一行 JSON 响应
 const { spawn } = require('child_process')
 const path = require('path')
+const { app } = require('electron')
 
 class GsmtcBridge {
   constructor() {
@@ -15,7 +16,9 @@ class GsmtcBridge {
     if (this.started) return
     this.started = true
 
-    const scriptPath = path.join(__dirname, 'gsmtc.ps1')
+    const scriptPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'gsmtc.ps1')
+      : path.join(__dirname, 'gsmtc.ps1')
     this.child = spawn(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],

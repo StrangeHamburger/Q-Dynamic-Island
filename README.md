@@ -50,6 +50,27 @@ npm install
 - 右键：菜单（缩放、背景透明度、固定位置、波浪可视化、退出）
 - 托盘图标：显示 / 退出
 
+## 打包发布（生成 Windows 安装包）
+
+```bash
+npm run dist
+```
+
+产物在 `dist/` 目录：
+
+| 文件 | 说明 |
+|---|---|
+| `灵动岛 Setup 0.1.0.exe` | NSIS 安装包（可选安装目录、桌面快捷方式） |
+| `灵动岛-0.1.0-portable.exe` | 便携版，免安装双击即用 |
+
+打包时 electron-builder 需要从 GitHub 下载 NSIS 等工具，国内可加镜像：
+
+```bash
+ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist
+```
+
+> 打包时 `gsmtc.ps1` 会被复制到 `resources/` 目录（`music.js` 已支持打包后路径），源文件仍保留 UTF-8 BOM。
+
 ## 说明与限制
 
 - 仅 Windows。
