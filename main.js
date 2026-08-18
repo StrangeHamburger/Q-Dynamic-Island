@@ -237,7 +237,7 @@ function attachCover(state) {
   if (query !== lastCoverQuery) {
     lastCoverQuery = query
     lastCover = null // 新歌，封面待拉取
-    getCover(title, state.artist).then((cover) => {
+    getCover(title, state.artist, state.source).then((cover) => {
       // 拉取结果只在「仍是这首歌」时生效
       const q = [title, state.artist].filter(Boolean).join(' ').trim()
       if (q !== lastCoverQuery) return
